@@ -60,6 +60,46 @@
 #   This call should infer: use_case, inferred_intent, and constraints
 #   from the raw conversation — don't ask the user for these explicitly.
 
+from google import genai
+import os
+
+gem_key = os.getenv('GEMINI-API-KEY')
+
+# The client gets the API key from the environment variable `GEMINI_API_KEY`.
+
+client = genai.Client(api_key = gem_key)
+
+# response = client.models.generate_content(
+#     model="gemini-3-flash-preview", contents="Explain how AI works in a few words"
+# )
+# print(response.text)
+
+# # The client gets the API key from the environment variable `GEMINI_API_KEY`.
+# client = genai.Client()
+
+# response = client.models.generate_content(
+#     model="gemini-3-flash-preview", contents="Explain how AI works in a few words"
+# )
+# print(response.text)
+
+
+q1 = "what's your request"
+promt1 = input(q1)
+q2 = "what's your request"
+promt2 = input(q2)
+q3 = "what's your request"
+prompt3 = input(q3)
+
+def run_layer_one(prompt):
+    try:
+        response = client.models.generate_content(
+            model="gemini-3-flash",
+            contents=prompt
+        )
+
+
+
+
 
 # TODO:
 # def load_notebooks_metadata() -> dict:
