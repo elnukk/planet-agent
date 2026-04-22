@@ -131,19 +131,29 @@ interface Message {
 function NavBar() {
   const router = useRouter();
   return (
-    <header className="bg-black h-14 px-4 flex items-center justify-between flex-shrink-0 sticky top-0 z-20">
-      <button onClick={() => router.push('/dashboard')}>
-        <div className="relative h-12 w-12">
+    <header className="bg-black h-20 flex items-center flex-shrink-0 sticky top-0 z-20 relative">
+      <button onClick={() => router.push('/dashboard')} className="flex-shrink-0 ml-2">
+        <div className="relative h-20 w-20">
           <Image src={planetLogo} alt="Planet logo" fill className="object-contain" />
         </div>
       </button>
-      <span className="text-white text-xl font-semibold tracking-wide">Centinela</span>
-      <button
-        onClick={() => router.push('/profile')}
-        className="text-white text-xs font-medium border border-white rounded-full px-4 py-1.5 hover:bg-white hover:text-black transition-colors"
-      >
-        Profile
-      </button>
+      <span className="absolute inset-0 flex items-center justify-center text-2xl font-bold tracking-wide text-white pointer-events-none">
+        Project Centinela
+      </span>
+      <div className="ml-auto flex-shrink-0 pr-4 flex items-center gap-2">
+        <button
+          onClick={() => router.push('/dashboard')}
+          className="text-white text-sm font-medium border border-white/60 rounded-full px-4 py-1.5 hover:bg-white hover:text-black transition-colors"
+        >
+          Home
+        </button>
+        <button
+          onClick={() => router.push('/profile')}
+          className="text-white text-sm font-medium border border-white rounded-full px-4 py-1.5 hover:bg-white hover:text-black transition-colors"
+        >
+          Profile
+        </button>
+      </div>
     </header>
   );
 }
@@ -211,7 +221,7 @@ function CodeCell({
 
 function ChatPanel({ onClose }: { onClose: () => void }) {
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'bot', text: 'Hi! I\'m Centinela\'s workflow assistant. Ask me anything about this analysis.' },
+    { role: 'bot', text: 'Hi! I\'m the Project Centinela workflow assistant. Ask me anything about this analysis.' },
   ]);
   const [input, setInput] = useState('');
   const [replyIdx, setReplyIdx] = useState(0);
@@ -239,7 +249,7 @@ function ChatPanel({ onClose }: { onClose: () => void }) {
     <div className="fixed bottom-20 right-4 w-80 bg-white border border-gray-200 rounded-2xl shadow-2xl flex flex-col z-30 overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100" style={{ backgroundColor: TEAL }}>
-        <span className="text-white text-sm font-semibold">Centinela Assistant</span>
+        <span className="text-white text-sm font-semibold">Centinela Workflow Assistant</span>
         <button onClick={onClose} className="text-white hover:opacity-70 transition-opacity">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
