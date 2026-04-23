@@ -24,6 +24,23 @@
 #
 # CONNECTS TO: lib/agent/retriever.ts calls this at workflow planning time
 #              alongside web_search.py — both run in parallel per step
+#
+# STUDENT NOTE:
+# This file should stay focused on notebook search only.
+# The DSPy agent will call one main function from here, so the goal is to
+# finish a clean `search_notebooks(query)` pipeline and keep the return shape
+# consistent with the OUTPUT schema above.
+#
+# WHAT STILL NEEDS TO HAPPEN HERE:
+# 1. Read notebook metadata from `knowledge-base/data/notebooks_metadata.json`.
+# 2. Narrow the search to a small shortlist of notebooks before opening cells.
+# 3. Parse notebook JSON and extract useful cell-level content.
+# 4. Score cells for relevance to the query.
+# 5. Return the top matches with short reasons the agent can reuse.
+#
+# IMPORTANT:
+# Try to keep helper functions in this file. The agent layer should not need
+# to know notebook internals; it should just call this module as a tool.
 
 # HOW IT WORKS:
 # STEP 1 — Coarse selection
@@ -65,6 +82,9 @@
 #     pass
 
 # def search_notebooks(query: str) -> list[dict]:
+#     """
+#     
+#     """
 #     # main function — runs the full pipeline:
 #     # load_metadata -> select_relevant_notebooks -> parse_notebook_cells
 #     # -> score_cell_relevance -> return top matches

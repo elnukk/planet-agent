@@ -26,6 +26,18 @@
 #   - intake/page.tsx renders the conversation in the frontend
 #   - convex/workflows.ts saves the output JSON to the database
 #   - lib/agent/planner.ts receives this JSON in M2
+#
+# NOTE:
+# This file should stay focused on the intake conversation only.
+# The DSPy agent should be able to call one main function from here and get
+# back a structured intake JSON.
+#
+# WHAT STILL NEEDS TO HAPPEN HERE:
+# 1. Ask the fixed Layer 1 questions in order.
+# 2. Generate Layer 2 follow-up questions based on what is still missing.
+# 3. Stop asking once there is enough information for the planner.
+# 4. Synthesize the final structured intake JSON from the conversation.
+#
 
 # HOW IT WORKS:
 # LAYER 1 (always the same — ask these first, in order):
@@ -60,6 +72,46 @@
 #   This call should infer: use_case, inferred_intent, and constraints
 #   from the raw conversation — don't ask the user for these explicitly.
 
+from google import genai
+import os
+
+gem_key = os.getenv('GEMINI-API-KEY')
+
+# The client gets the API key from the environment variable `GEMINI_API_KEY`.
+
+client = genai.Client(api_key = gem_key)
+
+# response = client.models.generate_content(
+#     model="gemini-3-flash-preview", contents="Explain how AI works in a few words"
+# )
+# print(response.text)
+
+# # The client gets the API key from the environment variable `GEMINI_API_KEY`.
+# client = genai.Client()
+
+# response = client.models.generate_content(
+#     model="gemini-3-flash-preview", contents="Explain how AI works in a few words"
+# )
+# print(response.text)
+
+
+q1 = "what's your request"
+promt1 = input(q1)
+q2 = "what's your request"
+promt2 = input(q2)
+q3 = "what's your request"
+prompt3 = input(q3)
+
+# def run_layer_one(prompt):
+#     try:
+#         response = client.models.generate_content(
+#             model="gemini-3-flash",
+#             contents=prompt
+#         )
+
+
+
+
 
 # TODO:
 # def load_notebooks_metadata() -> dict:
@@ -85,6 +137,9 @@
 #     pass
 
 # def run_intake() -> dict:
+#     """
+#     
+#     """
 #     # main function — runs full pipeline:
 #     # run_layer_one -> generate_layer_two_questions -> run_layer_two
 #     # -> synthesize_intake_json -> return intake dict
