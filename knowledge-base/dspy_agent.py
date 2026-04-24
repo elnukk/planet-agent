@@ -32,13 +32,37 @@ import os
 
 import dspy
 
+from search.web_search import search_planet_docs
 
 DEFAULT_MODEL = os.getenv("DSPY_MODEL", "gemini/gemini-2.5-flash")
 
 
 class BiodiversityAgentSignature(dspy.Signature):
     """
-    
+    You are an agent that helps build satellite data workflows using Planet APIs.
+
+    You have access to a tool:
+
+    search_planet_docs(query: str) -> dict
+
+    Use this tool when you need authoritative, up-to-date information from Planet's official documentation, including:
+    - API endpoints and parameters
+    - authentication methods (OAuth, API keys, tokens)
+    - rate limits and quotas
+    - data product specifications (e.g., bands, resolutions)
+    - error messages and expected responses
+
+    The tool returns:
+    {
+        "content": relevant extracted documentation text,
+        "source_url": the official docs page,
+        "section": page title
+    }
+
+    Only use this tool when specific technical details are required.
+    Do not use it for general reasoning or when the answer can be inferred.
+
+    Always prefer this tool over guessing API details.
     """
 
     user_request = dspy.InputField()
@@ -48,7 +72,7 @@ class BiodiversityAgentSignature(dspy.Signature):
 class BiodiversityWorkflowAgent(dspy.Module):
     def __init__(self):
         super().__init__()
-        self.agent = dspy.ReAct(BiodiversityAgentSignature, tools=[])
+        self.agent = dspy.ReAct(BiodiversityAgentSignature, tools=[search_planet_docs])
 
     def forward(self, user_request: str):
         return self.agent(user_request=user_request)

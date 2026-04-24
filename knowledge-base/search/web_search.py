@@ -189,3 +189,67 @@ def extract_relevant_section(content: str, query: str) -> str:
             best_section = section
 
     return best_section.strip()
+
+
+# Full workflow wrapper
+def search_planet_docs(query: str, api_key: str = None) -> dict:
+    """
+    MAIN WRAPPER FUNCTION
+
+    End-to-end pipeline:
+    1. Load API key
+    2. Search docs.planet.com via SerpAPI
+    3. Fetch top result page
+    4. Convert HTML → markdown
+    5. Extract most relevant section
+    6. Return structured result
+    """
+
+    # --- Step 0: Load API key ---
+    if api_key is None:
+        api_key = get_serpapi_key()
+
+    # --- Step 1: Search ---
+    refined_query = f"site:docs.planet.com {query}"
+
+    params = {
+        "engine": "google",
+        "q": refined_query,
+        "api_key": api_key,
+        "num": 3
+    }
+
+    response = requests.get(SERP_API_URL, params=params, timeout=10)
+    if response.status_code != 200:
+        raise Exception(f"SerpAPI error: {response.text}")
+
+    data = response.json()
+    organic = data.get("organic_results", [])
+
+    if not organic:
+        return {
+            "content": "",
+            "source_url": "",
+            "section": ""
+        }
+
+    # --- Step 2: Select top result ---
+    top_result = organic[0]
+    url = top_result.get("link")
+    title = top_result.get("title", "")
+
+    # --- Step 3: Fetch page ---
+    page_html = fetch_page_content(url)
+
+    # --- Step 4: Convert to markdown ---
+    content_md = html_to_markdown(page_html)
+
+    # --- Step 5: Extract relevant section ---
+    section = extract_relevant_section(content_md, query)
+
+    # --- Step 6: Return structured output ---
+    return {
+        "content": section,
+        "source_url": url,
+        "section": title
+    }
