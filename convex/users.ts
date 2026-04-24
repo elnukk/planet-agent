@@ -1,36 +1,76 @@
-// users.ts
-// PURPOSE: Convex query and mutation functions for managing user profiles.
-// CONNECTS TO:
-//   - schema.ts for the users table definition
-//   - src/app/page.tsx calls createUser on first sign in
-//   - convex/workflows.ts references userId when creating workflows
-//   - src/app/dashboard/page.tsx calls getUser to load profile
-//
-// FUNCTIONS NEEDED:
-//
-// queries (read):
-//   - getUser(id)
-//       returns a single user by id
-//       used by dashboard and workflow pages to load user context
-//
-//   - getUserByEmail(email)
-//       looks up a user by email
-//       used on sign in to check if user already exists
-//
-// mutations (write):
-//   - createUser(name, email)
-//       called on first sign in
-//       checks if user already exists before creating
-//       returns the new user id
-//
-//   - updateUser(id, name)
-//       called if the user updates their profile
-//
-// NOTE ON AUTH:
-//   Convex has built-in auth integrations — check out Clerk or Auth0
-//   as the easiest options to wire up with Next.js + Convex
-//   See: https://docs.convex.dev/auth
-//
-// RESOURCES:
-// https://docs.convex.dev/functions/queries
-// https://docs.convex.dev/functions/mutations
+import { mutation, query } from "./_generated/server";
+import { v } from "convex/values";
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+export const getUser = query({
+  args: { id: v.id("users") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.id);
+  },
+});
+
+export const getUserByExternalId = query({
+  args: { externalId: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("users")
+      .withIndex("by_externalId", (q) => q.eq("externalId", args.externalId))
+      .unique();
+  },
+});
+
+export const getUserByEmail = query({
+  args: { email: v.string() },
+  handler: async (ctx, args) => {
+    const email = normalizeEmail(args.email);
+    return await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", email))
+      .unique();
+  },
+});
+
+export const createUser = mutation({
+  args: { externalId: v.string(), name: v.string(), email: v.string() },
+  handler: async (ctx, args) => {
+    const existingByExternalId = await ctx.db
+      .query("users")
+      .withIndex("by_externalId", (q) => q.eq("externalId", args.externalId))
+      .unique();
+    if (existingByExternalId) return existingByExternalId._id;
+
+    const email = normalizeEmail(args.email);
+    const existing = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", email))
+      .unique();
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        externalId: args.externalId,
+        name: args.name.trim(),
+      });
+      return existing._id;
+    }
+
+    const now = Date.now();
+    return await ctx.db.insert("users", {
+      externalId: args.externalId,
+      name: args.name.trim(),
+      email,
+      createdAt: now,
+    });
+  },
+});
+
+export const updateUser = mutation({
+  args: { id: v.id("users"), name: v.string() },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.id);
+    if (!user) return null;
+    await ctx.db.patch(args.id, { name: args.name.trim() });
+    return await ctx.db.get(args.id);
+  },
+});

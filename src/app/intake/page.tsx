@@ -3,7 +3,9 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { getCurrentUser, createWorkflow } from '@/lib/auth';
+import { useMutation } from 'convex/react';
+import { api } from '@/lib/convex';
+import { getCurrentUser } from '@/lib/auth';
 import planetLogo from '../dashboard/planetlogo.png';
 
 const TEAL = '#009DA5';
@@ -530,6 +532,7 @@ function StepSummary({ useCase, startDate, endDate, frequency, fileName, answers
   onStartOver: () => void;
 }) {
   const router = useRouter();
+  const createWorkflow = useMutation(api.workflows.createWorkflow);
   const [workflowName, setWorkflowName] = useState('');
   const [creating, setCreating] = useState(false);
 
@@ -538,12 +541,30 @@ function StepSummary({ useCase, startDate, endDate, frequency, fileName, answers
     setWorkflowName(suggested || 'New Workflow');
   }, [useCase]);
 
-  function handleCreate() {
+  async function handleCreate() {
     const user = getCurrentUser();
     if (!user || !workflowName.trim()) return;
     setCreating(true);
-    const wf = createWorkflow(user.id, workflowName.trim());
-    router.push(`/workflow/${wf.id}`);
+    try {
+      const workflowId = await createWorkflow({
+        userId: user.id,
+        name: workflowName.trim(),
+        intakeJson: {
+          useCase,
+          startDate,
+          endDate,
+          frequency,
+          fileName,
+          questions,
+          answers,
+        },
+        notebookCells: [],
+        sourceCells: [],
+      });
+      router.push(`/workflow/${String(workflowId)}`);
+    } finally {
+      setCreating(false);
+    }
   }
 
   const summaryRows = [

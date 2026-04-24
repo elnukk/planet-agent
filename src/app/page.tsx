@@ -3,7 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import { useMutation } from 'convex/react';
 import { signIn, createAccount, getCurrentUser, resetPassword } from '@/lib/auth';
+import { api } from '@/lib/convex';
 import loginBg from './dashboard/loginbackground.png';
 import planetLogo from './dashboard/planetlogo.png';
 
@@ -134,6 +136,7 @@ const INPUT = 'w-full px-4 py-3 border border-gray-200 rounded-full text-sm plac
 // ─── Main auth page ───────────────────────────────────────────────────────────
 export default function AuthPage() {
   const router = useRouter();
+  const ensureConvexUser = useMutation(api.users.createUser);
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<Mode>('login');
 
@@ -186,6 +189,12 @@ export default function AuthPage() {
       if (mode === 'login') {
         const user = signIn(email, password);
         if (!user) { setError('Incorrect email or password.'); return; }
+        try {
+          await ensureConvexUser({ externalId: user.id, name: user.name, email: user.email });
+        } catch {
+          setError('Signed in locally, but failed to connect to Convex.');
+          return;
+        }
         router.push('/dashboard');
       } else {
         if (!name.trim()) { setError('Please enter your full name.'); return; }
@@ -203,6 +212,12 @@ export default function AuthPage() {
           apiKeys,
         });
         if (result === 'exists') { setError('An account with this email already exists.'); return; }
+        try {
+          await ensureConvexUser({ externalId: result.id, name: result.name, email: result.email });
+        } catch {
+          setError('Account created locally, but failed to connect to Convex.');
+          return;
+        }
         router.push('/dashboard');
       }
     } finally {

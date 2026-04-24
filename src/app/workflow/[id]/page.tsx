@@ -3,6 +3,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import { useMutation, useQuery } from 'convex/react';
+import { api, type Id } from '@/lib/convex';
 import planetLogo from '../../dashboard/planetlogo.png';
 
 const TEAL = '#009DA5';
@@ -122,7 +124,7 @@ const BOT_REPLIES = [
 ];
 
 interface Message {
-  role: 'user' | 'bot';
+  role: 'user' | 'assistant';
   text: string;
 }
 
@@ -219,30 +221,26 @@ function CodeCell({
   );
 }
 
-function ChatPanel({ onClose }: { onClose: () => void }) {
-  const [messages, setMessages] = useState<Message[]>([
-    { role: 'bot', text: 'Hi! I\'m the Project Centinela workflow assistant. Ask me anything about this analysis.' },
-  ]);
+function ChatPanel({ workflowId, onClose }: { workflowId: Id<'workflows'>; onClose: () => void }) {
+  const storedMessages = useQuery(api.conversations.getConversation, { workflowId });
+  const sendMessage = useMutation(api.conversations.sendMessage);
   const [input, setInput] = useState('');
-  const [replyIdx, setReplyIdx] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [storedMessages]);
 
-  function send() {
+  async function send() {
     const text = input.trim();
     if (!text) return;
-    setMessages((m) => [...m, { role: 'user', text }]);
     setInput('');
-    setTimeout(() => {
-      setMessages((m) => [
-        ...m,
-        { role: 'bot', text: BOT_REPLIES[replyIdx % BOT_REPLIES.length] },
-      ]);
-      setReplyIdx((i) => i + 1);
-    }, 700);
+    await sendMessage({ workflowId, role: 'user', content: text });
+    await sendMessage({
+      workflowId,
+      role: 'assistant',
+      content: BOT_REPLIES[Math.floor(Math.random() * BOT_REPLIES.length)],
+    });
   }
 
   return (
@@ -259,7 +257,14 @@ function ChatPanel({ onClose }: { onClose: () => void }) {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 max-h-72">
-        {messages.map((msg, i) => (
+        {(!storedMessages || storedMessages.length === 0) && (
+          <div className="flex justify-start">
+            <div className="text-sm px-3 py-2 rounded-2xl max-w-[85%] leading-snug bg-gray-100 text-gray-800 rounded-bl-sm">
+              Hi! I&apos;m the Project Centinela workflow assistant. Ask me anything about this workflow.
+            </div>
+          </div>
+        )}
+        {(storedMessages ?? []).map((msg, i) => (
           <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div
               className={`text-sm px-3 py-2 rounded-2xl max-w-[85%] leading-snug ${
@@ -269,7 +274,7 @@ function ChatPanel({ onClose }: { onClose: () => void }) {
               }`}
               style={msg.role === 'user' ? { backgroundColor: TEAL } : {}}
             >
-              {msg.text}
+              {msg.content}
             </div>
           </div>
         ))}
@@ -303,7 +308,9 @@ function ChatPanel({ onClose }: { onClose: () => void }) {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-export default function WorkflowPage() {
+export default function WorkflowPage({ params }: { params: { id: string } }) {
+  const workflowId = params.id as Id<'workflows'>;
+  const workflow = useQuery(api.workflows.getWorkflow, { id: workflowId });
   const [showCode, setShowCode] = useState(true);
   const [ranCells, setRanCells] = useState<Set<string>>(new Set());
   const [runningAll, setRunningAll] = useState(false);
@@ -315,10 +322,16 @@ export default function WorkflowPage() {
 
   async function runAll() {
     setRunningAll(true);
-    const codeCells = CELLS.filter((c) => c.type === 'code');
+    const notebookCells = workflow?.notebookCells?.length ? workflow.notebookCells : [];
+    const codeCells = notebookCells.length
+      ? notebookCells
+          .map((c, idx) => ({ idx, cell: c }))
+          .filter(({ cell }) => cell.cell_type === 'code')
+      : CELLS.map((c, idx) => ({ idx, cell: c })).filter(({ cell }) => cell.type === 'code');
+
     for (const cell of codeCells) {
       await new Promise((r) => setTimeout(r, 400));
-      setRanCells((prev) => new Set([...prev, cell.id]));
+      setRanCells((prev) => new Set([...prev, String(cell.idx)]));
     }
     setRunningAll(false);
   }
@@ -361,7 +374,11 @@ export default function WorkflowPage() {
         </button>
 
         <span className="text-xs text-gray-400 ml-auto">
-          {ranCells.size}/{CELLS.filter((c) => c.type === 'code').length} cells run
+          {ranCells.size}/
+          {(workflow?.notebookCells?.length
+            ? workflow.notebookCells.filter((c) => c.cell_type === 'code').length
+            : CELLS.filter((c) => c.type === 'code').length)}{' '}
+          cells run
         </span>
       </div>
 
@@ -369,7 +386,7 @@ export default function WorkflowPage() {
       <main className="flex-1 max-w-4xl mx-auto w-full px-6 py-8 space-y-4 pb-28">
         {/* Intro card */}
         <div className="bg-gray-100 rounded-2xl px-6 py-5">
-          <h1 className="text-xl font-bold text-gray-900 mb-1">Deforestation Analysis</h1>
+          <h1 className="text-xl font-bold text-gray-900 mb-1">{workflow?.name ?? 'Workflow'}</h1>
           <p className="text-sm text-gray-500 leading-relaxed">
             This notebook uses Planet Labs NICFI basemaps and PlanetScope imagery to detect forest cover
             change within your region of interest. Run all cells sequentially, or execute individual
@@ -378,18 +395,43 @@ export default function WorkflowPage() {
         </div>
 
         {/* Cells */}
-        {CELLS.map((cell) =>
-          cell.type === 'markdown' ? (
-            <MarkdownCell key={cell.id} source={cell.source} />
-          ) : (
-            <CodeCell
-              key={cell.id}
-              cell={cell}
-              showCode={showCode}
-              ran={ranCells.has(cell.id)}
-              onRun={runCell}
-            />
+        {workflow === undefined ? (
+          <div className="min-h-[240px] flex items-center justify-center">
+            <div className="w-8 h-8 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : (workflow?.notebookCells?.length ?? 0) > 0 ? (
+          workflow!.notebookCells.map((cell, idx) =>
+            cell.cell_type === 'markdown' ? (
+              <MarkdownCell key={idx} source={cell.source} />
+            ) : (
+              <CodeCell
+                key={idx}
+                cell={{ id: String(idx), type: 'code', source: cell.source }}
+                showCode={showCode}
+                ran={ranCells.has(String(idx))}
+                onRun={runCell}
+              />
+            )
           )
+        ) : (
+          <>
+            <div className="bg-white border border-gray-200 rounded-xl px-6 py-5 text-sm text-gray-600">
+              No notebook cells have been generated for this workflow yet. Showing a demo notebook.
+            </div>
+            {CELLS.map((cell) =>
+              cell.type === 'markdown' ? (
+                <MarkdownCell key={cell.id} source={cell.source} />
+              ) : (
+                <CodeCell
+                  key={cell.id}
+                  cell={cell}
+                  showCode={showCode}
+                  ran={ranCells.has(cell.id)}
+                  onRun={runCell}
+                />
+              )
+            )}
+          </>
         )}
       </main>
 
@@ -411,7 +453,7 @@ export default function WorkflowPage() {
         )}
       </button>
 
-      {chatOpen && <ChatPanel onClose={() => setChatOpen(false)} />}
+      {chatOpen && <ChatPanel workflowId={workflowId} onClose={() => setChatOpen(false)} />}
     </div>
   );
 }
