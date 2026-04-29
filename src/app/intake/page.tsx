@@ -1,66 +1,40 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { getCurrentUser, createWorkflow } from '@/lib/auth';
+import { storeWorkflowImage } from '@/lib/workflowImages';
 import planetLogo from '../dashboard/planetlogo.png';
 
 const TEAL = '#009DA5';
-type Frequency = 'Daily' | 'Weekly' | 'Monthly' | 'Quarterly';
+type Frequency = 'Daily' | 'Weekly' | 'Monthly' | 'Quarterly' | '';
 
-// ─── AI question generation (simulated) ──────────────────────────────────────
-type QTriple = [string, string, string];
+const FALLBACK_QUESTIONS: string[] = [
+  'What specific environmental or land-use indicators are you tracking?',
+  'Do you have existing baseline data or reference imagery to compare against?',
+  'How will the results of this analysis be used or acted upon?',
+];
 
-function getQuestionSets(useCase: string): QTriple[] {
-  const u = useCase.toLowerCase();
-
-  let domainSet: QTriple;
-  if (u.includes('forest') || u.includes('deforest') || u.includes('tree') || u.includes('canopy')) {
-    domainSet = [
-      'What tree species or forest types are the primary focus of your analysis?',
-      'Are you monitoring illegal logging, natural degradation, or general canopy cover change?',
-      'What is the minimum detectable change size (in hectares) relevant to your study?',
-    ];
-  } else if (u.includes('crop') || u.includes('agri') || u.includes('farm') || u.includes('harvest')) {
-    domainSet = [
-      'Which crop types are you monitoring, and which growth stage is most critical?',
-      'Are you focused on yield prediction, stress detection, or pest/disease identification?',
-      'What farm management decisions will this satellite analysis inform?',
-    ];
-  } else if (u.includes('water') || u.includes('flood') || u.includes('river') || u.includes('lake') || u.includes('coast')) {
-    domainSet = [
-      'Are you monitoring surface water extent, water quality, or flood risk?',
-      'What water body types are included in your area of interest?',
-      'What downstream decisions or actions will this monitoring support?',
-    ];
-  } else if (u.includes('urban') || u.includes('city') || u.includes('infrastructure') || u.includes('building')) {
-    domainSet = [
-      'What urban features are you analyzing — buildings, roads, green space, or other?',
-      'Is this for growth monitoring, damage assessment, or urban planning purposes?',
-      'What spatial resolution is required for your specific application?',
-    ];
-  } else {
-    domainSet = [
-      'What specific environmental or land-use indicators are you tracking?',
-      'Do you have existing baseline data or reference imagery to compare against?',
-      'How will the results of this analysis be used or acted upon?',
-    ];
+async function fetchAIQuestions(
+  useCase: string,
+  region: string,
+  startDate: string,
+  endDate: string,
+): Promise<string[]> {
+  try {
+    const res = await fetch('/api/intake-questions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ useCase, region, dateRange: `${startDate} to ${endDate}` }),
+    });
+    if (!res.ok) return FALLBACK_QUESTIONS;
+    const data = await res.json();
+    const qs: string[] = data.questions;
+    return qs?.length >= 3 ? qs.slice(0, 5) : FALLBACK_QUESTIONS;
+  } catch {
+    return FALLBACK_QUESTIONS;
   }
-
-  const generalSet1: QTriple = [
-    'What spatial resolution is most critical for your use case?',
-    'Are there seasonal factors (wet season, growing season, etc.) that affect your analysis?',
-    'Will you be comparing results across multiple time periods or locations?',
-  ];
-
-  const generalSet2: QTriple = [
-    'What stakeholders or communities will benefit most from this analysis?',
-    'Does this analysis need to run on a regular schedule or is it a one-time study?',
-    'What output formats do you need — maps, statistics, reports, or raw data exports?',
-  ];
-
-  return [domainSet, generalSet1, generalSet2];
 }
 
 // ─── Shared NavBar ────────────────────────────────────────────────────────────
@@ -87,8 +61,8 @@ function NavBar() {
 }
 
 // ─── Progress bar ─────────────────────────────────────────────────────────────
-// Steps 1–4 = setup, step 5 = hidden loading, 6–8 = questions, 9 = summary
-const STEP_LABELS = ['Use Case', 'Time Frame', 'Region', 'Q 1', 'Q 2', 'Q 3', 'Confirm'];
+// Steps 1–4 = setup, step 5 = hidden loading, 6 = questions (dot nav), 7 = summary
+const STEP_LABELS = ['Use Case', 'Time Frame', 'Region', 'Questions', 'Confirm'];
 
 function stepToProgressIdx(step: number): number {
   if (step === 1) return 0;
@@ -97,8 +71,6 @@ function stepToProgressIdx(step: number): number {
   if (step === 5) return -1;
   if (step === 6) return 3;
   if (step === 7) return 4;
-  if (step === 8) return 5;
-  if (step === 9) return 6;
   return -1;
 }
 
@@ -147,35 +119,6 @@ function ProgressBar({ step }: { step: number }) {
   );
 }
 
-// ─── Nav buttons ──────────────────────────────────────────────────────────────
-function NavButtons({
-  onBack,
-  onContinue,
-  continueLabel = 'Continue',
-  continueDisabled = false,
-}: {
-  onBack?: () => void;
-  onContinue: () => void;
-  continueLabel?: string;
-  continueDisabled?: boolean;
-}) {
-  return (
-    <div className="flex justify-between pt-6">
-      {onBack ? (
-        <button onClick={onBack}
-          className="px-6 py-2.5 rounded-full text-sm font-medium text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors">
-          Back
-        </button>
-      ) : <div />}
-      <button onClick={onContinue} disabled={continueDisabled}
-        className="px-8 py-2.5 rounded-full text-sm font-semibold text-white disabled:opacity-40 transition-colors"
-        style={{ backgroundColor: TEAL }}>
-        {continueLabel}
-      </button>
-    </div>
-  );
-}
-
 // ─── Step 1: Use Case ─────────────────────────────────────────────────────────
 function StepUseCase({ value, onChange, onContinue }: {
   value: string; onChange: (v: string) => void; onContinue: () => void;
@@ -193,7 +136,13 @@ function StepUseCase({ value, onChange, onContinue }: {
           className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-100 resize-none transition"
         />
       </div>
-      <NavButtons onContinue={onContinue} continueDisabled={!value.trim()} />
+      <div className="flex justify-end pt-6">
+        <button onClick={onContinue} disabled={!value.trim()}
+          className="px-8 py-2.5 rounded-full text-sm font-semibold text-white disabled:opacity-40 transition-colors"
+          style={{ backgroundColor: TEAL }}>
+          Continue
+        </button>
+      </div>
     </div>
   );
 }
@@ -217,11 +166,7 @@ function StepTimeFrame({ startDate, endDate, frequency, onStartDate, onEndDate, 
   const [showCustom, setShowCustom] = useState(false);
 
   function applyPreset(months: number) {
-    if (months === 0) {
-      setShowCustom(true);
-      setSelectedPreset(0);
-      return;
-    }
+    if (months === 0) { setShowCustom(true); setSelectedPreset(0); return; }
     setShowCustom(false);
     setSelectedPreset(months);
     const end = new Date();
@@ -237,23 +182,18 @@ function StepTimeFrame({ startDate, endDate, frequency, onStartDate, onEndDate, 
     <div className="max-w-xl mx-auto">
       <h2 className="text-2xl font-bold text-gray-900 mb-2">What time frame are you interested in?</h2>
       <p className="text-sm text-gray-500 mb-6">Select how far back you want to investigate, and how often you want data sampled.</p>
-
       <div className="bg-gray-100 rounded-2xl p-5 space-y-5">
-        {/* Preset grid */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {TIME_PRESETS.map(({ label, months }) => {
             const active = showCustom ? months === 0 : selectedPreset === months;
             return (
-              <button
-                key={label}
-                onClick={() => applyPreset(months)}
+              <button key={label} onClick={() => applyPreset(months)}
                 className="py-3 px-4 rounded-xl text-sm font-medium border-2 text-left transition-all"
                 style={{
                   borderColor: active ? TEAL : '#e5e7eb',
                   backgroundColor: active ? `${TEAL}12` : 'white',
                   color: active ? TEAL : '#374151',
-                }}
-              >
+                }}>
                 <span className="block font-semibold">{label}</span>
                 {months > 0 && (
                   <span className="block text-xs mt-0.5" style={{ color: active ? TEAL : '#9ca3af' }}>
@@ -264,8 +204,6 @@ function StepTimeFrame({ startDate, endDate, frequency, onStartDate, onEndDate, 
             );
           })}
         </div>
-
-        {/* Custom date pickers */}
         {showCustom && (
           <div className="flex gap-4 pt-1">
             <div className="flex-1">
@@ -280,8 +218,6 @@ function StepTimeFrame({ startDate, endDate, frequency, onStartDate, onEndDate, 
             </div>
           </div>
         )}
-
-        {/* Frequency */}
         <div>
           <label className="block text-xs font-semibold text-gray-600 mb-1.5">Data Frequency</label>
           <div className="flex gap-2 flex-wrap">
@@ -299,8 +235,12 @@ function StepTimeFrame({ startDate, endDate, frequency, onStartDate, onEndDate, 
           </div>
         </div>
       </div>
-
-      <NavButtons onBack={onBack} onContinue={onContinue} continueDisabled={!canContinue} />
+      <div className="flex justify-between pt-6">
+        <button onClick={onBack} className="px-6 py-2.5 rounded-full text-sm font-medium text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors">Back</button>
+        <button onClick={onContinue} disabled={!canContinue}
+          className="px-8 py-2.5 rounded-full text-sm font-semibold text-white disabled:opacity-40 transition-colors"
+          style={{ backgroundColor: TEAL }}>Continue</button>
+      </div>
     </div>
   );
 }
@@ -311,6 +251,8 @@ function StepRegion({ onFileLoad, onBack }: {
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [regionText, setRegionText] = useState('');
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
@@ -323,8 +265,31 @@ function StepRegion({ onFileLoad, onBack }: {
     if (file) onFileLoad(file.name);
   }
 
+  function handleTextChange(val: string) {
+    setRegionText(val);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (val.length < 2) { setSuggestions([]); return; }
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(val)}&format=json&limit=5`,
+          { headers: { 'User-Agent': 'PlanetAgent/1.0' } }
+        );
+        const data: Array<{ display_name: string }> = await res.json();
+        setSuggestions(data.map((d) => d.display_name));
+      } catch {
+        setSuggestions([]);
+      }
+    }, 350);
+  }
+
+  function selectSuggestion(s: string) {
+    setRegionText(s);
+    setSuggestions([]);
+  }
+
   function handleTextContinue() {
-    if (regionText.trim()) onFileLoad(regionText.trim());
+    if (regionText.trim()) { setSuggestions([]); onFileLoad(regionText.trim()); }
   }
 
   const canContinue = !!regionText.trim();
@@ -332,11 +297,10 @@ function StepRegion({ onFileLoad, onBack }: {
   return (
     <div className="max-w-xl mx-auto">
       <h2 className="text-2xl font-bold text-gray-900 mb-2">What region are you interested in?</h2>
-      <p className="text-sm text-gray-500 mb-6">Upload a GeoJSON or KML file to define your area of interest, or type a region name below.</p>
+      <p className="text-sm text-gray-500 mb-6">Upload a GeoJSON or KML file, or search for a place name below.</p>
       <div className="bg-gray-100 rounded-2xl p-5 space-y-4">
         <div
-          onDrop={handleDrop}
-          onDragOver={(e) => e.preventDefault()}
+          onDrop={handleDrop} onDragOver={(e) => e.preventDefault()}
           onClick={() => fileRef.current?.click()}
           className="rounded-xl border-2 border-dashed border-gray-300 px-6 py-12 flex flex-col items-center text-center cursor-pointer hover:border-teal-400 hover:bg-teal-50/50 transition-colors"
         >
@@ -354,26 +318,44 @@ function StepRegion({ onFileLoad, onBack }: {
           <div className="flex-1 h-px bg-gray-200" />
         </div>
 
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={regionText}
-            onChange={(e) => setRegionText(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleTextContinue(); }}
-            placeholder="Type a region name (e.g. Amazon Basin, Mekong Delta…)"
-            className="flex-1 bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-100 transition"
-          />
-          <button
-            onClick={handleTextContinue}
-            disabled={!canContinue}
-            className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 transition-colors flex-shrink-0"
-            style={{ backgroundColor: '#009DA5' }}
-          >
-            Use
-          </button>
+        <div className="relative">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={regionText}
+              onChange={(e) => handleTextChange(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleTextContinue(); }}
+              placeholder="Search a place (e.g. Amazon Basin, Mekong Delta…)"
+              className="flex-1 bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-100 transition"
+            />
+            <button onClick={handleTextContinue} disabled={!canContinue}
+              className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 transition-colors flex-shrink-0"
+              style={{ backgroundColor: TEAL }}>
+              Use
+            </button>
+          </div>
+          {suggestions.length > 0 && (
+            <ul className="absolute top-full left-0 right-14 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-10 overflow-hidden">
+              {suggestions.map((s, i) => (
+                <li key={i}>
+                  <button
+                    onMouseDown={() => selectSuggestion(s)}
+                    className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-0"
+                  >
+                    {s}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
-      <NavButtons onBack={onBack} onContinue={handleTextContinue} continueDisabled={!canContinue} />
+      <div className="flex justify-between pt-6">
+        <button onClick={onBack} className="px-6 py-2.5 rounded-full text-sm font-medium text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors">Back</button>
+        <button onClick={handleTextContinue} disabled={!canContinue}
+          className="px-8 py-2.5 rounded-full text-sm font-semibold text-white disabled:opacity-40 transition-colors"
+          style={{ backgroundColor: TEAL }}>Continue</button>
+      </div>
     </div>
   );
 }
@@ -386,9 +368,7 @@ function StepLocationLoaded({ fileName, onReupload, onBack, onContinue }: {
     <div className="max-w-xl mx-auto">
       <h2 className="text-2xl font-bold text-gray-900 mb-2">Location Data Loaded</h2>
       <p className="text-sm text-gray-500 mb-6">Your region has been imported. Review the details below and continue to confirm.</p>
-
       <div className="bg-gray-100 rounded-2xl p-5 space-y-4">
-        {/* Success banner */}
         <div className="bg-green-50 border border-green-200 rounded-xl px-5 py-4 flex items-start gap-3">
           <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0 mt-0.5">
             <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -400,8 +380,6 @@ function StepLocationLoaded({ fileName, onReupload, onBack, onContinue }: {
             <p className="text-xs text-green-600 mt-0.5 font-mono">{fileName}</p>
           </div>
         </div>
-
-        {/* Simulated map placeholder */}
         <div className="rounded-xl overflow-hidden bg-gray-200 h-40 flex items-center justify-center">
           <div className="text-center">
             <svg className="w-10 h-10 text-gray-400 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -410,31 +388,34 @@ function StepLocationLoaded({ fileName, onReupload, onBack, onContinue }: {
             <p className="text-xs text-gray-500">Region preview</p>
           </div>
         </div>
-
-        {/* Reupload option */}
         <div className="flex items-center justify-between bg-white rounded-xl px-4 py-3">
           <span className="text-xs text-gray-500">Not the right area?</span>
-          <button
-            onClick={onReupload}
-            className="text-xs font-medium hover:underline transition-colors"
-            style={{ color: TEAL }}
-          >
+          <button onClick={onReupload} className="text-xs font-medium hover:underline transition-colors" style={{ color: TEAL }}>
             Re-upload file
           </button>
         </div>
       </div>
-
-      <NavButtons onBack={onBack} onContinue={onContinue} continueLabel="Confirm & Continue" />
+      <div className="flex justify-between pt-6">
+        <button onClick={onBack} className="px-6 py-2.5 rounded-full text-sm font-medium text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors">Back</button>
+        <button onClick={onContinue}
+          className="px-8 py-2.5 rounded-full text-sm font-semibold text-white transition-colors"
+          style={{ backgroundColor: TEAL }}>Confirm & Continue</button>
+      </div>
     </div>
   );
 }
 
 // ─── Step 5: Loading interstitial ─────────────────────────────────────────────
-function StepLoading({ onDone }: { onDone: () => void }) {
+function StepLoading({
+  useCase, region, startDate, endDate, onDone,
+}: {
+  useCase: string; region: string; startDate: string; endDate: string;
+  onDone: (questions: string[]) => void;
+}) {
   useEffect(() => {
-    const t = setTimeout(onDone, 2500);
-    return () => clearTimeout(t);
-  }, [onDone]);
+    fetchAIQuestions(useCase, region, startDate, endDate).then(onDone);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="min-h-screen bg-white flex flex-col">
@@ -453,96 +434,164 @@ function StepLoading({ onDone }: { onDone: () => void }) {
   );
 }
 
-// ─── Steps 6–8: Follow-up questions ──────────────────────────────────────────
-function StepFollowUp({ questionNumber, questionText, answer, onAnswer, onBack, onContinue, showRegenerate, onRegenerate, regenerating }: {
-  questionNumber: number;
-  questionText: string;
-  answer: string;
-  onAnswer: (v: string) => void;
+// ─── Step 6: Follow-up questions with dot navigation ─────────────────────────
+function StepQuestions({
+  questions, answers, currentIdx, regenerating,
+  onAnswer, onSetIdx, onBack, onFinish, onRegenerate,
+}: {
+  questions: string[];
+  answers: string[];
+  currentIdx: number;
+  regenerating: boolean;
+  onAnswer: (idx: number, val: string) => void;
+  onSetIdx: (idx: number) => void;
   onBack: () => void;
-  onContinue: () => void;
-  showRegenerate?: boolean;
-  onRegenerate?: () => void;
-  regenerating?: boolean;
+  onFinish: () => void;
+  onRegenerate: () => void;
 }) {
+  const isLast = currentIdx === questions.length - 1;
+  const canContinue = !!answers[currentIdx]?.trim();
+
   return (
     <div className="max-w-xl mx-auto">
-      <div className="flex items-center gap-3 mb-3">
-        <div className="px-2.5 py-1 rounded-full text-xs font-bold text-white"
-          style={{ backgroundColor: TEAL }}>
-          Q{questionNumber}
-        </div>
-        <span className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Follow-up Question {questionNumber} of 3</span>
-        {showRegenerate && (
-          <button
-            onClick={onRegenerate}
-            disabled={regenerating}
-            className="ml-auto flex items-center gap-1.5 text-xs font-medium px-3 py-1 rounded-full border transition-all disabled:opacity-50"
-            style={{ color: TEAL, borderColor: TEAL }}
-          >
-            {regenerating ? (
-              <>
-                <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                Regenerating…
-              </>
-            ) : (
-              <>
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
-                </svg>
-                Regenerate questions
-              </>
-            )}
-          </button>
-        )}
+      {/* Header */}
+      <div className="flex items-center justify-between mb-5">
+        <span className="text-xs font-semibold text-gray-400 uppercase tracking-widest">
+          Follow-up Question {currentIdx + 1} of {questions.length}
+        </span>
+        <button
+          onClick={onRegenerate}
+          disabled={regenerating}
+          className="flex items-center gap-1.5 text-xs font-medium px-3 py-1 rounded-full border transition-all disabled:opacity-50"
+          style={{ color: TEAL, borderColor: TEAL }}
+        >
+          {regenerating ? (
+            <>
+              <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Regenerating…
+            </>
+          ) : (
+            <>
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+              </svg>
+              Regenerate
+            </>
+          )}
+        </button>
       </div>
 
-      <h2 className="text-2xl font-bold text-gray-900 mb-6">{questionText}</h2>
+      {/* Dot progress indicator */}
+      <div className="flex items-center justify-center mb-7">
+        {questions.map((_, i) => {
+          const answered = i < currentIdx || (i === currentIdx && !!answers[i]?.trim());
+          const isCurrent = i === currentIdx;
+          return (
+            <div key={i} className="flex items-center">
+              <button
+                onClick={() => i < currentIdx ? onSetIdx(i) : undefined}
+                disabled={i >= currentIdx}
+                className="rounded-full transition-all duration-200 focus:outline-none"
+                style={{
+                  width: isCurrent ? 14 : 10,
+                  height: isCurrent ? 14 : 10,
+                  backgroundColor: answered || isCurrent ? TEAL : 'white',
+                  border: `2px solid ${answered || isCurrent ? TEAL : '#d1d5db'}`,
+                  cursor: i < currentIdx ? 'pointer' : 'default',
+                }}
+              />
+              {i < questions.length - 1 && (
+                <div
+                  className="h-0.5 w-8 transition-all duration-300"
+                  style={{ backgroundColor: i < currentIdx ? TEAL : '#e5e7eb' }}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
 
+      {/* Question */}
+      <h2 className="text-2xl font-bold text-gray-900 mb-6">
+        {regenerating ? '…' : questions[currentIdx]}
+      </h2>
+
+      {/* Answer */}
       <div className="bg-gray-100 rounded-2xl p-5">
         <textarea
-          key={questionText}
-          value={answer}
-          onChange={(e) => onAnswer(e.target.value)}
+          key={`${currentIdx}-${questions[currentIdx]}`}
+          value={answers[currentIdx] ?? ''}
+          onChange={(e) => onAnswer(currentIdx, e.target.value)}
           placeholder="Type your answer here…"
           rows={6}
           className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-100 resize-none transition"
         />
       </div>
 
-      <NavButtons onBack={onBack} onContinue={onContinue} continueDisabled={!answer.trim()} />
+      <div className="flex justify-between pt-6">
+        <button
+          onClick={currentIdx > 0 ? () => onSetIdx(currentIdx - 1) : onBack}
+          className="px-6 py-2.5 rounded-full text-sm font-medium text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors"
+        >
+          Back
+        </button>
+        <button
+          onClick={isLast ? onFinish : () => onSetIdx(currentIdx + 1)}
+          disabled={!canContinue}
+          className="px-8 py-2.5 rounded-full text-sm font-semibold text-white disabled:opacity-40 transition-colors"
+          style={{ backgroundColor: TEAL }}
+        >
+          {isLast ? 'Finish' : 'Continue'}
+        </button>
+      </div>
     </div>
   );
 }
 
-// ─── Step 9: Summary + workflow creation ──────────────────────────────────────
+// ─── Step 7: Summary + workflow creation ──────────────────────────────────────
 function StepSummary({ useCase, startDate, endDate, frequency, fileName, answers, questions, onStartOver }: {
   useCase: string;
   startDate: string;
   endDate: string;
   frequency: string;
   fileName: string;
-  answers: [string, string, string];
-  questions: [string, string, string];
+  answers: string[];
+  questions: string[];
   onStartOver: () => void;
 }) {
   const router = useRouter();
-  const [workflowName, setWorkflowName] = useState('');
+  const [workflowName, setWorkflowName] = useState(
+    () => useCase.trim().split('\n')[0].trim().slice(0, 60) || 'New Workflow'
+  );
   const [creating, setCreating] = useState(false);
+  const [aiImageDataUrl, setAiImageDataUrl] = useState<string | null>(null);
+  const [generatingMeta, setGeneratingMeta] = useState(true);
 
   useEffect(() => {
-    const suggested = useCase.trim().split('\n')[0].trim().slice(0, 60);
-    setWorkflowName(suggested || 'New Workflow');
-  }, [useCase]);
+    fetch('/api/generate-workflow', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ useCase, region: fileName, startDate, endDate }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.name) setWorkflowName(data.name);
+        if (data.imageDataUrl) setAiImageDataUrl(data.imageDataUrl);
+      })
+      .catch(() => {})
+      .finally(() => setGeneratingMeta(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function handleCreate() {
     const user = getCurrentUser();
     if (!user || !workflowName.trim()) return;
     setCreating(true);
     const wf = createWorkflow(user.id, workflowName.trim());
+    if (aiImageDataUrl) storeWorkflowImage(wf.id, aiImageDataUrl);
     router.push(`/workflow/${wf.id}`);
   }
 
@@ -556,9 +605,9 @@ function StepSummary({ useCase, startDate, endDate, frequency, fileName, answers
   return (
     <div className="max-w-xl mx-auto">
       <h2 className="text-2xl font-bold text-gray-900 mb-2">Confirm Your Workflow</h2>
-      <p className="text-sm text-gray-500 mb-6">Review your inputs and give your workflow a name to get started.</p>
+      <p className="text-sm text-gray-500 mb-6">Review your inputs and name your workflow.</p>
 
-      <div className="bg-gray-100 rounded-2xl p-5 space-y-3 mb-6">
+      <div className="bg-gray-100 rounded-2xl p-5 space-y-3 mb-4">
         {summaryRows.map(({ label, value }) => (
           <div key={label} className="bg-white rounded-xl px-4 py-3">
             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-0.5">{label}</div>
@@ -567,15 +616,31 @@ function StepSummary({ useCase, startDate, endDate, frequency, fileName, answers
         ))}
       </div>
 
-      <div className="bg-gray-100 rounded-2xl p-5 mb-2">
-        <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Workflow Name</label>
-        <input
-          type="text"
-          value={workflowName}
-          onChange={(e) => setWorkflowName(e.target.value)}
-          placeholder="e.g. Amazon Deforestation Analysis"
-          className="w-full bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-cyan-100 transition"
-        />
+      {/* Card preview + name */}
+      <div className="bg-gray-100 rounded-2xl p-5 mb-2 flex gap-4 items-start">
+        <div className="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0">
+          {generatingMeta ? (
+            <div className="w-full h-full bg-gray-200 animate-pulse" />
+          ) : aiImageDataUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={aiImageDataUrl} alt="card preview" className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full bg-gradient-to-br from-cyan-400 to-teal-700" />
+          )}
+        </div>
+        <div className="flex-1">
+          <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">
+            Workflow Name
+            {generatingMeta && <span className="ml-2 text-gray-400 font-normal normal-case tracking-normal">Generating…</span>}
+          </label>
+          <input
+            type="text"
+            value={workflowName}
+            onChange={(e) => setWorkflowName(e.target.value)}
+            placeholder="e.g. Amazon Deforestation Analysis"
+            className="w-full bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-cyan-100 transition"
+          />
+        </div>
       </div>
 
       <div className="flex justify-between pt-4">
@@ -600,34 +665,31 @@ function StepSummary({ useCase, startDate, endDate, frequency, fileName, answers
 export default function IntakePage() {
   const [step, setStep] = useState(1);
 
-  // Step 1
   const [useCase, setUseCase] = useState('');
-  // Step 2
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [frequency, setFrequency] = useState<Frequency>('Monthly');
-  // Steps 3 & 4
+  const [frequency, setFrequency] = useState<Frequency>('');
   const [regionFileName, setRegionFileName] = useState('');
-  // Steps 6–8 — answers
-  const [q1Answer, setQ1Answer] = useState('');
-  const [q2Answer, setQ2Answer] = useState('');
-  const [q3Answer, setQ3Answer] = useState('');
-  // Question set cycling (regenerate)
-  const [qSetIdx, setQSetIdx] = useState(0);
+  const [aiQuestions, setAiQuestions] = useState<string[]>(FALLBACK_QUESTIONS);
+  const [answers, setAnswers] = useState<string[]>(['', '', '']);
+  const [currentQIdx, setCurrentQIdx] = useState(0);
   const [regenerating, setRegenerating] = useState(false);
 
-  const questionSets = useMemo(() => getQuestionSets(useCase), [useCase]);
-  const currentQuestions = questionSets[qSetIdx % questionSets.length];
+  function setAnswer(idx: number, val: string) {
+    setAnswers((prev) => {
+      const next = [...prev];
+      next[idx] = val;
+      return next;
+    });
+  }
 
-  function handleRegenerate() {
+  async function handleRegenerate() {
     setRegenerating(true);
-    setQ1Answer('');
-    setQ2Answer('');
-    setQ3Answer('');
-    setTimeout(() => {
-      setQSetIdx((i) => i + 1);
-      setRegenerating(false);
-    }, 1500);
+    setCurrentQIdx(0);
+    const qs = await fetchAIQuestions(useCase, regionFileName, startDate, endDate);
+    setAiQuestions(qs);
+    setAnswers(new Array(qs.length).fill(''));
+    setRegenerating(false);
   }
 
   function reset() {
@@ -635,12 +697,11 @@ export default function IntakePage() {
     setUseCase('');
     setStartDate('');
     setEndDate('');
-    setFrequency('Monthly');
+    setFrequency('');
     setRegionFileName('');
-    setQ1Answer('');
-    setQ2Answer('');
-    setQ3Answer('');
-    setQSetIdx(0);
+    setAiQuestions(FALLBACK_QUESTIONS);
+    setAnswers(['', '', '']);
+    setCurrentQIdx(0);
   }
 
   function handleFileLoad(name: string) {
@@ -649,7 +710,20 @@ export default function IntakePage() {
   }
 
   if (step === 5) {
-    return <StepLoading onDone={() => setStep(6)} />;
+    return (
+      <StepLoading
+        useCase={useCase}
+        region={regionFileName}
+        startDate={startDate}
+        endDate={endDate}
+        onDone={(qs) => {
+          setAiQuestions(qs);
+          setAnswers(new Array(qs.length).fill(''));
+          setCurrentQIdx(0);
+          setStep(6);
+        }}
+      />
+    );
   }
 
   return (
@@ -684,50 +758,28 @@ export default function IntakePage() {
         )}
 
         {step === 6 && (
-          <StepFollowUp
-            questionNumber={1}
-            questionText={regenerating ? '…' : currentQuestions[0]}
-            answer={q1Answer}
-            onAnswer={setQ1Answer}
-            onBack={() => setStep(4)}
-            onContinue={() => setStep(7)}
-            showRegenerate
-            onRegenerate={handleRegenerate}
+          <StepQuestions
+            questions={aiQuestions}
+            answers={answers}
+            currentIdx={currentQIdx}
             regenerating={regenerating}
+            onAnswer={setAnswer}
+            onSetIdx={setCurrentQIdx}
+            onBack={() => setStep(4)}
+            onFinish={() => setStep(7)}
+            onRegenerate={handleRegenerate}
           />
         )}
 
         {step === 7 && (
-          <StepFollowUp
-            questionNumber={2}
-            questionText={currentQuestions[1]}
-            answer={q2Answer}
-            onAnswer={setQ2Answer}
-            onBack={() => setStep(6)}
-            onContinue={() => setStep(8)}
-          />
-        )}
-
-        {step === 8 && (
-          <StepFollowUp
-            questionNumber={3}
-            questionText={currentQuestions[2]}
-            answer={q3Answer}
-            onAnswer={setQ3Answer}
-            onBack={() => setStep(7)}
-            onContinue={() => setStep(9)}
-          />
-        )}
-
-        {step === 9 && (
           <StepSummary
             useCase={useCase}
             startDate={startDate}
             endDate={endDate}
             frequency={frequency}
             fileName={regionFileName}
-            answers={[q1Answer, q2Answer, q3Answer]}
-            questions={currentQuestions}
+            answers={answers}
+            questions={aiQuestions}
             onStartOver={reset}
           />
         )}
