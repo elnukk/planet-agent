@@ -1,40 +1,19 @@
 # intake_bot.py
 # M1 - Brandyn
-#
-# PURPOSE: A conversational chatbot that collects user information
-# through a two-layer question flow and outputs a structured intake JSON
-# ready to hand off to the workflow planner in M2.
-#
-# INPUT: none — this initiates the conversation
-#
-# OUTPUT: a dict matching the intake schema:
-#   {
-#     "region": {},                  <- GeoJSON object
-#     "date_range": {
-#       "start": "2024-01-01",
-#       "end": "2024-06-01"
-#     },
-#     "temporal_resolution": "biweekly",
-#     "planet_product": "PlanetScope",
-#     "use_case": "bare soil detection",
-#     "user_description": "raw text of what the user said",
-#     "inferred_intent": "monitor tillage events in agricultural fields",
-#     "constraints": ["needs cloud masking", "RGB+NIR available"]
-#   }
-#
-# CONNECTS TO:
-#   - intake/page.tsx renders the conversation in the frontend
-#   - convex/workflows.ts saves the output JSON to the database
-#   - lib/agent/planner.ts receives this JSON in M2
+
 
 import json
 import os
 import re
 from pathlib import Path
 from google import genai
+from dotenv import load_dotenv
+
+
+ROOT_DIR = Path(__file__).resolve().parents[2]
+load_dotenv(dotenv_path=ROOT_DIR / ".env")
 
 # ─── CLIENT SETUP ─────────────────────────────────────────────────────────────
-# FIX: env var was "GEMINI-API-KEY" (dashes not valid in env var names)
 gem_key = os.getenv("GEMINI_API_KEY")
 if not gem_key:
     raise EnvironmentError("GEMINI_API_KEY environment variable is not set.")
