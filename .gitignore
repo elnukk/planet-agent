@@ -16,6 +16,11 @@ tsconfig.tsbuildinfo
 .env.test.local
 .env.production.local
 
+# Python
+__pycache__/
+*.pyc
+.venv/
+
 # Misc
 .DS_Store
 *.pem
