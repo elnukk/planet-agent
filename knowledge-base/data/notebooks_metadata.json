@@ -395,12 +395,12 @@
   },
   "bare_soil_detector.ipynb": {
     "use_case": "Bare Soil Detector",
-    "planet_product": "Sentinel-2",
+    "planet_product": "PlanetScope",
     "apis_used": [
       "Statistical API",
       "Processing API"
     ],
-    "description": "Demonstrates the process of identifying bare soil periods in agricultural fields using Sentinel Hub satellite data, spectral index calculations (MSAVI, BSI, NDTI, TI, NDBI), time-series analysis of bare soil probability, and data visualization.",
+    "description": "Demonstrates the process of identifying bare soil periods in agricultural fields using spectral index calculations (MSAVI, BSI, NDTI, TI, NDBI), time-series analysis of bare soil probability, and visualization. Core MSAVI formula and threshold-based period detection are applicable to any multispectral imagery including PlanetScope.",
     "source_url": "https://github.com/planetlabs/notebooks/blob/master/jupyter-notebooks/use_cases/bare_soil_detector/bare_soil_detector.ipynb"
   },
   "basemaps_api_introduction.ipynb": {

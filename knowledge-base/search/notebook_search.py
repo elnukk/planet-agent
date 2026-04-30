@@ -63,13 +63,32 @@ def score_cell_relevance(cell: dict, query: str):
             if term in lowered:
                 score += 1.5
 
-    # Penalize markdown a bit for code-seeking queries
+    if "msavi" in query_tokens or any(t in query_tokens for t in ["vegetation", "index", "formula"]):
+        for term in ["msavi", "0.5", "sqrt", "nir", "red", "vegetation index", "band_nir", "band_red"]:
+            if term in lowered:
+                score += 1.5
+
+    if any(t in query_tokens for t in ["cloud", "mask", "udm2", "clear", "composite"]):
+        for term in ["cloud_mask", "shadow_mask", "udm2", "cloud", "mask", "clear_percent", "rasterio.open", "ortho_udm2"]:
+            if term in lowered:
+                score += 1.5
+
+    if any(t in query_tokens for t in ["bare", "soil", "tillage", "threshold", "detection", "dip"]):
+        for term in ["bare_soil", "threshold", "tillage", "bareSoil", "period", ".diff(", "start_date", "end_date"]:
+            if term in lowered:
+                score += 1.5
+
+    # Penalize markdown for queries containing technical domain terms
+    _TECHNICAL_TERMS = {
+        "calculates", "msavi", "ndvi", "mask", "cloud", "threshold",
+        "detection", "composite", "formula", "udm2", "tillage", "bare",
+        "soil", "rasterio", "filter", "apply", "compute", "smooth",
+    }
     if cell.get("cell_type") == "markdown" and (
         "code" in normalize_text(query)
-        or "calculates" in query_tokens
-        or "calls" in query_tokens
+        or query_tokens.intersection(_TECHNICAL_TERMS)
     ):
-        score -= 1.0
+        score -= 1.5
 
     if score <= 0:
         return 0.0, None
