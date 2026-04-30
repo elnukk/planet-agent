@@ -10,9 +10,9 @@ import re
 import sys
 import time
 from pathlib import Path
-from google import genai
-from google.genai import errors as genai_errors
+import anthropic
 from dotenv import load_dotenv
+
 
 # Allow imports from knowledge-base/ (agentic_search, search/)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -23,12 +23,12 @@ from search.web_search import search_planet_docs
 ROOT_DIR = Path(__file__).resolve().parents[2]
 load_dotenv(dotenv_path=ROOT_DIR / ".env")
 
-gem_key = os.getenv("GEMINI_API_KEY")
-if not gem_key:
-    raise EnvironmentError("GEMINI_API_KEY environment variable is not set.")
+api_key = os.getenv("ANTHROPIC_API_KEY")
+if not api_key:
+    raise EnvironmentError("ANTHROPIC_API_KEY environment variable is not set.")
 
-client = genai.Client(api_key=gem_key)
-MODEL = "gemini-2.5-flash"
+client = anthropic.Anthropic(api_key=api_key)
+MODEL = "claude-sonnet-4-6"
 
 
 def _sanitize_json_strings(s: str) -> str:
@@ -39,7 +39,6 @@ def _sanitize_json_strings(s: str) -> str:
     while i < len(s):
         c = s[i]
         if c == '\\' and in_string:
-            # Pass through the backslash + next char; fix invalid escape sequences
             next_c = s[i + 1] if i + 1 < len(s) else ''
             if next_c in '"\\/ bfnrtu':
                 result.append(c)
@@ -73,21 +72,26 @@ def _call_llm(prompt: str, max_retries: int = 5) -> str:
     delay = 30
     for attempt in range(max_retries):
         try:
-            response = client.models.generate_content(model=MODEL, contents=prompt)
-            raw = response.text.strip()
+            response = client.messages.create(
+                model=MODEL,
+                max_tokens=4096,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw = response.content[0].text.strip()
             raw = re.sub(r"^```(?:json)?", "", raw).strip()
             raw = re.sub(r"```$", "", raw).strip()
             return raw
-        except genai_errors.ClientError as e:
-            is_rate_limit = "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e)
-            if is_rate_limit and attempt < max_retries - 1:
+        except anthropic.RateLimitError as e:
+            if attempt < max_retries - 1:
                 print(f"[planner] Rate limited, retrying in {delay}s... (attempt {attempt + 1}/{max_retries})")
                 time.sleep(delay)
                 delay = min(delay * 2, 120)
             else:
                 raise
+        except anthropic.APIError as e:
+            raise
 
-
+        
 def _safe_docs_search(query: str) -> dict:
     try:
         return search_planet_docs(query)

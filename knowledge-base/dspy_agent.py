@@ -24,7 +24,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(dotenv_path=ROOT_DIR / ".env")
 
 
-DEFAULT_MODEL = os.getenv("DSPY_MODEL", "gemini/gemini-2.5-flash")
+DEFAULT_MODEL = os.getenv("DSPY_MODEL", "claude-sonnet-4-6")
 
 
 def search_notebooks_tool(query: str) -> list[dict[str, Any]]:
@@ -84,9 +84,9 @@ def build_agent():
     # Central place to choose the model used by DSPy.
     # If the team changes models later, they should only need to change
     # configuration here rather than rewriting the agent structure.
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
-        raise EnvironmentError("GEMINI_API_KEY is not set. Add it to the repo-root .env file.")
+        raise EnvironmentError("ANTHROPIC_API_KEY is not set. Add it to the repo-root .env file.")
 
     lm = dspy.LM(DEFAULT_MODEL, api_key=api_key)
     dspy.configure(lm=lm)
