@@ -19,7 +19,7 @@ def search_notebooks(query: str):
     notebooks_dir = base_dir / "notebooks"
 
     metadata = load_metadata()
-    ranked = rank_notebooks(query, metadata, top_k=3)
+    ranked = rank_notebooks(query, metadata, top_k=5)
     selected_notebooks = [filename for filename, _ in ranked]
 
     all_results = []

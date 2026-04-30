@@ -48,6 +48,17 @@ def run_intake_tool() -> dict[str, Any]:
     return run_intake()
 
 
+def plan_workflow_tool(intake_json: str) -> dict[str, Any]:
+    """Plan a complete satellite data workflow from intake JSON.
+    Runs discovery search, generates ordered steps, and enriches each step
+    with the best notebook cells and API docs via notebook_search and web_search.
+    Returns an enriched plan ready for the coder."""
+    from agent.planner import plan_workflow
+
+    intake = json.loads(intake_json) if isinstance(intake_json, str) else intake_json
+    return plan_workflow(intake)
+
+
 class BiodiversityAgentSignature(dspy.Signature):
     """
     
@@ -62,7 +73,7 @@ class BiodiversityWorkflowAgent(dspy.Module):
         super().__init__()
         self.agent = dspy.ReAct(
             BiodiversityAgentSignature,
-            tools=[search_notebooks_tool, search_planet_docs_tool, run_intake_tool],
+            tools=[search_notebooks_tool, search_planet_docs_tool, run_intake_tool, plan_workflow_tool],
         )
 
     def forward(self, user_request: str):
