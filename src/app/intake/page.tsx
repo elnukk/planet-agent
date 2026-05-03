@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { getCurrentUser, createWorkflow } from '@/lib/auth';
 import { storeWorkflowImage } from '@/lib/workflowImages';
+import { storeWorkflowIntake, type IntakeJSON } from '@/lib/workflowIntake';
 import planetLogo from '../dashboard/planetlogo.png';
 
 const TEAL = '#009DA5';
@@ -16,17 +17,25 @@ const FALLBACK_QUESTIONS: string[] = [
   'How will the results of this analysis be used or acted upon?',
 ];
 
+const PLANET_PRODUCTS = ['PlanetScope', 'SkySat', 'Sentinel-2', 'Basemaps', 'Planetary Variables'];
+
 async function fetchAIQuestions(
   useCase: string,
   region: string,
   startDate: string,
   endDate: string,
+  planetProduct: string,
 ): Promise<string[]> {
   try {
     const res = await fetch('/api/intake-questions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ useCase, region, dateRange: `${startDate} to ${endDate}` }),
+      body: JSON.stringify({
+        useCase,
+        region,
+        dateRange: `${startDate} to ${endDate}`,
+        planetProduct,
+      }),
     });
     if (!res.ok) return FALLBACK_QUESTIONS;
     const data = await res.json();
@@ -45,9 +54,12 @@ function NavBar() {
       <div className="relative h-20 w-20 flex-shrink-0 ml-2">
         <Image src={planetLogo} alt="Planet logo" fill className="object-contain" />
       </div>
-      <span className="absolute inset-0 flex items-center justify-center text-2xl font-bold tracking-wide text-white pointer-events-none">
+      <button
+        onClick={() => router.push('/dashboard')}
+        className="absolute inset-0 flex items-center justify-center text-2xl font-bold tracking-wide text-white hover:opacity-80 transition-opacity"
+      >
         Project Centinela
-      </span>
+      </button>
       <div className="ml-auto flex-shrink-0 pr-4">
         <button
           onClick={() => router.push('/profile')}
@@ -61,16 +73,17 @@ function NavBar() {
 }
 
 // ─── Progress bar ─────────────────────────────────────────────────────────────
-// Steps 1–4 = setup, step 5 = hidden loading, 6 = questions (dot nav), 7 = summary
-const STEP_LABELS = ['Use Case', 'Time Frame', 'Region', 'Questions', 'Confirm'];
+// Steps 1–5 = setup, step 6 = hidden loading, 7 = questions, 8 = summary
+const STEP_LABELS = ['Use Case', 'Time Frame', 'Product', 'Region', 'Questions', 'Confirm'];
 
 function stepToProgressIdx(step: number): number {
   if (step === 1) return 0;
   if (step === 2) return 1;
-  if (step === 3 || step === 4) return 2;
-  if (step === 5) return -1;
-  if (step === 6) return 3;
+  if (step === 3) return 2;
+  if (step === 4 || step === 5) return 3;
+  if (step === 6) return -1;
   if (step === 7) return 4;
+  if (step === 8) return 5;
   return -1;
 }
 
@@ -245,7 +258,79 @@ function StepTimeFrame({ startDate, endDate, frequency, onStartDate, onEndDate, 
   );
 }
 
-// ─── Step 3: Region ───────────────────────────────────────────────────────────
+// ─── Step 3: Planet Product ───────────────────────────────────────────────────
+function StepPlanetProduct({ value, onChange, onBack, onContinue }: {
+  value: string; onChange: (v: string) => void; onBack: () => void; onContinue: () => void;
+}) {
+  const [custom, setCustom] = useState('');
+  const selected = PLANET_PRODUCTS.includes(value) ? value : value ? 'Other' : '';
+
+  function pick(product: string) {
+    if (product === 'Other') {
+      onChange(custom);
+    } else {
+      onChange(product);
+      setCustom('');
+    }
+  }
+
+  function handleCustomChange(v: string) {
+    setCustom(v);
+    onChange(v);
+  }
+
+  return (
+    <div className="max-w-xl mx-auto">
+      <h2 className="text-2xl font-bold text-gray-900 mb-2">Which Planet product do you have access to?</h2>
+      <p className="text-sm text-gray-500 mb-6">This determines which bands and capabilities are available for your workflow.</p>
+      <div className="bg-gray-100 rounded-2xl p-5 space-y-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {PLANET_PRODUCTS.map((product) => {
+            const active = value === product;
+            return (
+              <button key={product} onClick={() => pick(product)}
+                className="py-3 px-4 rounded-xl text-sm font-semibold border-2 text-left transition-all"
+                style={{
+                  borderColor: active ? TEAL : '#e5e7eb',
+                  backgroundColor: active ? `${TEAL}12` : 'white',
+                  color: active ? TEAL : '#374151',
+                }}>
+                {product}
+              </button>
+            );
+          })}
+          <button onClick={() => pick('Other')}
+            className="py-3 px-4 rounded-xl text-sm font-semibold border-2 text-left transition-all"
+            style={{
+              borderColor: selected === 'Other' ? TEAL : '#e5e7eb',
+              backgroundColor: selected === 'Other' ? `${TEAL}12` : 'white',
+              color: selected === 'Other' ? TEAL : '#374151',
+            }}>
+            Other
+          </button>
+        </div>
+        {selected === 'Other' && (
+          <input
+            type="text"
+            value={custom}
+            onChange={(e) => handleCustomChange(e.target.value)}
+            placeholder="e.g. NICFI Basemaps, Maxar…"
+            className="w-full bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-cyan-100 transition"
+            autoFocus
+          />
+        )}
+      </div>
+      <div className="flex justify-between pt-6">
+        <button onClick={onBack} className="px-6 py-2.5 rounded-full text-sm font-medium text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors">Back</button>
+        <button onClick={onContinue} disabled={!value.trim()}
+          className="px-8 py-2.5 rounded-full text-sm font-semibold text-white disabled:opacity-40 transition-colors"
+          style={{ backgroundColor: TEAL }}>Continue</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Step 4: Region ───────────────────────────────────────────────────────────
 function StepRegion({ onFileLoad, onBack }: {
   onFileLoad: (name: string) => void; onBack: () => void;
 }) {
@@ -360,7 +445,7 @@ function StepRegion({ onFileLoad, onBack }: {
   );
 }
 
-// ─── Step 4: Location Loaded confirmation ─────────────────────────────────────
+// ─── Step 5: Location Loaded confirmation ─────────────────────────────────────
 function StepLocationLoaded({ fileName, onReupload, onBack, onContinue }: {
   fileName: string; onReupload: () => void; onBack: () => void; onContinue: () => void;
 }) {
@@ -405,15 +490,15 @@ function StepLocationLoaded({ fileName, onReupload, onBack, onContinue }: {
   );
 }
 
-// ─── Step 5: Loading interstitial ─────────────────────────────────────────────
+// ─── Step 6: Loading interstitial ─────────────────────────────────────────────
 function StepLoading({
-  useCase, region, startDate, endDate, onDone,
+  useCase, region, startDate, endDate, planetProduct, onDone,
 }: {
-  useCase: string; region: string; startDate: string; endDate: string;
+  useCase: string; region: string; startDate: string; endDate: string; planetProduct: string;
   onDone: (questions: string[]) => void;
 }) {
   useEffect(() => {
-    fetchAIQuestions(useCase, region, startDate, endDate).then(onDone);
+    fetchAIQuestions(useCase, region, startDate, endDate, planetProduct).then(onDone);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -434,7 +519,7 @@ function StepLoading({
   );
 }
 
-// ─── Step 6: Follow-up questions with dot navigation ─────────────────────────
+// ─── Step 7: Follow-up questions with dot navigation ─────────────────────────
 function StepQuestions({
   questions, answers, currentIdx, regenerating,
   onAnswer, onSetIdx, onBack, onFinish, onRegenerate,
@@ -454,7 +539,6 @@ function StepQuestions({
 
   return (
     <div className="max-w-xl mx-auto">
-      {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <span className="text-xs font-semibold text-gray-400 uppercase tracking-widest">
           Follow-up Question {currentIdx + 1} of {questions.length}
@@ -484,7 +568,6 @@ function StepQuestions({
         </button>
       </div>
 
-      {/* Dot progress indicator */}
       <div className="flex items-center justify-center mb-7">
         {questions.map((_, i) => {
           const answered = i < currentIdx || (i === currentIdx && !!answers[i]?.trim());
@@ -514,12 +597,10 @@ function StepQuestions({
         })}
       </div>
 
-      {/* Question */}
       <h2 className="text-2xl font-bold text-gray-900 mb-6">
         {regenerating ? '…' : questions[currentIdx]}
       </h2>
 
-      {/* Answer */}
       <div className="bg-gray-100 rounded-2xl p-5">
         <textarea
           key={`${currentIdx}-${questions[currentIdx]}`}
@@ -551,13 +632,14 @@ function StepQuestions({
   );
 }
 
-// ─── Step 7: Summary + workflow creation ──────────────────────────────────────
-function StepSummary({ useCase, startDate, endDate, frequency, fileName, answers, questions, onStartOver }: {
+// ─── Step 8: Summary + workflow creation ──────────────────────────────────────
+function StepSummary({ useCase, startDate, endDate, frequency, fileName, planetProduct, answers, questions, onStartOver }: {
   useCase: string;
   startDate: string;
   endDate: string;
   frequency: string;
   fileName: string;
+  planetProduct: string;
   answers: string[];
   questions: string[];
   onStartOver: () => void;
@@ -569,20 +651,30 @@ function StepSummary({ useCase, startDate, endDate, frequency, fileName, answers
   const [creating, setCreating] = useState(false);
   const [aiImageDataUrl, setAiImageDataUrl] = useState<string | null>(null);
   const [generatingMeta, setGeneratingMeta] = useState(true);
+  const intakeRef = useRef<IntakeJSON | null>(null);
 
   useEffect(() => {
-    fetch('/api/generate-workflow', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ useCase, region: fileName, startDate, endDate }),
-    })
-      .then((r) => r.json())
-      .then((data) => {
+    Promise.allSettled([
+      fetch('/api/generate-workflow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ useCase, region: fileName, startDate, endDate }),
+      }).then((r) => r.json()),
+      fetch('/api/synthesize-intake', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ useCaseDescription: useCase, region: fileName, startDate, endDate, frequency, planetProduct, questions, answers }),
+      }).then((r) => r.json()),
+    ]).then(([metaResult, intakeResult]) => {
+      if (metaResult.status === 'fulfilled') {
+        const data = metaResult.value;
         if (data.name) setWorkflowName(data.name);
         if (data.imageDataUrl) setAiImageDataUrl(data.imageDataUrl);
-      })
-      .catch(() => {})
-      .finally(() => setGeneratingMeta(false));
+      }
+      if (intakeResult.status === 'fulfilled' && intakeResult.value?.intake) {
+        intakeRef.current = intakeResult.value.intake;
+      }
+    }).finally(() => setGeneratingMeta(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -592,12 +684,14 @@ function StepSummary({ useCase, startDate, endDate, frequency, fileName, answers
     setCreating(true);
     const wf = createWorkflow(user.id, workflowName.trim());
     if (aiImageDataUrl) storeWorkflowImage(wf.id, aiImageDataUrl);
+    if (intakeRef.current) storeWorkflowIntake(wf.id, intakeRef.current);
     router.push(`/workflow/${wf.id}`);
   }
 
   const summaryRows = [
     { label: 'Use Case', value: useCase || '—' },
-    { label: 'Time Frame', value: startDate && endDate ? `${startDate} → ${endDate} (${frequency})` : '—' },
+    { label: 'Time Frame', value: startDate && endDate ? `${startDate} → ${endDate}${frequency ? ` (${frequency})` : ''}` : '—' },
+    { label: 'Planet Product', value: planetProduct || '—' },
     { label: 'Region', value: fileName || '—' },
     ...questions.map((q, i) => ({ label: `Q${i + 1}: ${q.slice(0, 40)}…`, value: answers[i] || '—' })),
   ];
@@ -616,7 +710,6 @@ function StepSummary({ useCase, startDate, endDate, frequency, fileName, answers
         ))}
       </div>
 
-      {/* Card preview + name */}
       <div className="bg-gray-100 rounded-2xl p-5 mb-2 flex gap-4 items-start">
         <div className="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0">
           {generatingMeta ? (
@@ -669,6 +762,7 @@ export default function IntakePage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [frequency, setFrequency] = useState<Frequency>('');
+  const [planetProduct, setPlanetProduct] = useState('');
   const [regionFileName, setRegionFileName] = useState('');
   const [aiQuestions, setAiQuestions] = useState<string[]>(FALLBACK_QUESTIONS);
   const [answers, setAnswers] = useState<string[]>(['', '', '']);
@@ -685,10 +779,28 @@ export default function IntakePage() {
 
   async function handleRegenerate() {
     setRegenerating(true);
-    setCurrentQIdx(0);
-    const qs = await fetchAIQuestions(useCase, regionFileName, startDate, endDate);
-    setAiQuestions(qs);
-    setAnswers(new Array(qs.length).fill(''));
+    try {
+      const res = await fetch('/api/intake-questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          useCase,
+          region: regionFileName,
+          dateRange: `${startDate} to ${endDate}`,
+          planetProduct,
+          singleQuestion: true,
+          existingQuestions: aiQuestions,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const replacement: string = data.questions?.[0];
+        if (replacement) {
+          setAiQuestions((prev) => prev.map((q, i) => (i === currentQIdx ? replacement : q)));
+          setAnswer(currentQIdx, '');
+        }
+      }
+    } catch {}
     setRegenerating(false);
   }
 
@@ -698,6 +810,7 @@ export default function IntakePage() {
     setStartDate('');
     setEndDate('');
     setFrequency('');
+    setPlanetProduct('');
     setRegionFileName('');
     setAiQuestions(FALLBACK_QUESTIONS);
     setAnswers(['', '', '']);
@@ -706,21 +819,22 @@ export default function IntakePage() {
 
   function handleFileLoad(name: string) {
     setRegionFileName(name);
-    setStep(4);
+    setStep(5);
   }
 
-  if (step === 5) {
+  if (step === 6) {
     return (
       <StepLoading
         useCase={useCase}
         region={regionFileName}
         startDate={startDate}
         endDate={endDate}
+        planetProduct={planetProduct}
         onDone={(qs) => {
           setAiQuestions(qs);
           setAnswers(new Array(qs.length).fill(''));
           setCurrentQIdx(0);
-          setStep(6);
+          setStep(7);
         }}
       />
     );
@@ -745,19 +859,26 @@ export default function IntakePage() {
         )}
 
         {step === 3 && (
-          <StepRegion onFileLoad={handleFileLoad} onBack={() => setStep(2)} />
-        )}
-
-        {step === 4 && (
-          <StepLocationLoaded
-            fileName={regionFileName}
-            onReupload={() => { setRegionFileName(''); setStep(3); }}
-            onBack={() => setStep(3)}
-            onContinue={() => setStep(5)}
+          <StepPlanetProduct
+            value={planetProduct} onChange={setPlanetProduct}
+            onBack={() => setStep(2)} onContinue={() => setStep(4)}
           />
         )}
 
-        {step === 6 && (
+        {step === 4 && (
+          <StepRegion onFileLoad={handleFileLoad} onBack={() => setStep(3)} />
+        )}
+
+        {step === 5 && (
+          <StepLocationLoaded
+            fileName={regionFileName}
+            onReupload={() => { setRegionFileName(''); setStep(4); }}
+            onBack={() => setStep(4)}
+            onContinue={() => setStep(6)}
+          />
+        )}
+
+        {step === 7 && (
           <StepQuestions
             questions={aiQuestions}
             answers={answers}
@@ -765,19 +886,20 @@ export default function IntakePage() {
             regenerating={regenerating}
             onAnswer={setAnswer}
             onSetIdx={setCurrentQIdx}
-            onBack={() => setStep(4)}
-            onFinish={() => setStep(7)}
+            onBack={() => setStep(5)}
+            onFinish={() => setStep(8)}
             onRegenerate={handleRegenerate}
           />
         )}
 
-        {step === 7 && (
+        {step === 8 && (
           <StepSummary
             useCase={useCase}
             startDate={startDate}
             endDate={endDate}
             frequency={frequency}
             fileName={regionFileName}
+            planetProduct={planetProduct}
             answers={answers}
             questions={aiQuestions}
             onStartOver={reset}
