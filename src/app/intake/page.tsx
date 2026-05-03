@@ -189,7 +189,7 @@ function StepTimeFrame({ startDate, endDate, frequency, onStartDate, onEndDate, 
     onEndDate(end.toISOString().split('T')[0]);
   }
 
-  const canContinue = (selectedPreset !== null && selectedPreset !== 0) || (showCustom && !!startDate && !!endDate);
+  const canContinue = ((selectedPreset !== null && selectedPreset !== 0) || (showCustom && !!startDate && !!endDate)) && !!frequency;
 
   return (
     <div className="max-w-xl mx-auto">
@@ -260,56 +260,82 @@ function StepTimeFrame({ startDate, endDate, frequency, onStartDate, onEndDate, 
 
 // ─── Step 3: Planet Product ───────────────────────────────────────────────────
 function StepPlanetProduct({ value, onChange, onBack, onContinue }: {
-  value: string; onChange: (v: string) => void; onBack: () => void; onContinue: () => void;
+  value: string[]; onChange: (v: string[]) => void; onBack: () => void; onContinue: () => void;
 }) {
+  const [showOther, setShowOther] = useState(false);
   const [custom, setCustom] = useState('');
-  const selected = PLANET_PRODUCTS.includes(value) ? value : value ? 'Other' : '';
 
-  function pick(product: string) {
-    if (product === 'Other') {
-      onChange(custom);
+  function toggle(product: string) {
+    if (value.includes(product)) {
+      onChange(value.filter((v) => v !== product));
     } else {
-      onChange(product);
+      onChange([...value, product]);
+    }
+  }
+
+  function toggleOther() {
+    if (showOther) {
+      onChange(value.filter((v) => PLANET_PRODUCTS.includes(v)));
       setCustom('');
+      setShowOther(false);
+    } else {
+      setShowOther(true);
     }
   }
 
   function handleCustomChange(v: string) {
     setCustom(v);
-    onChange(v);
+    const withoutCustom = value.filter((p) => PLANET_PRODUCTS.includes(p));
+    onChange(v.trim() ? [...withoutCustom, v.trim()] : withoutCustom);
   }
 
   return (
     <div className="max-w-xl mx-auto">
-      <h2 className="text-2xl font-bold text-gray-900 mb-2">Which Planet product do you have access to?</h2>
-      <p className="text-sm text-gray-500 mb-6">This determines which bands and capabilities are available for your workflow.</p>
+      <h2 className="text-2xl font-bold text-gray-900 mb-2">Which Planet products do you have access to?</h2>
+      <p className="text-sm text-gray-500 mb-6">Select all that apply — this determines which bands and capabilities are available for your workflow.</p>
       <div className="bg-gray-100 rounded-2xl p-5 space-y-4">
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {PLANET_PRODUCTS.map((product) => {
-            const active = value === product;
+            const active = value.includes(product);
             return (
-              <button key={product} onClick={() => pick(product)}
-                className="py-3 px-4 rounded-xl text-sm font-semibold border-2 text-left transition-all"
+              <button key={product} onClick={() => toggle(product)}
+                className="py-3 px-4 rounded-xl text-sm font-semibold border-2 text-left transition-all flex items-center gap-2"
                 style={{
                   borderColor: active ? TEAL : '#e5e7eb',
                   backgroundColor: active ? `${TEAL}12` : 'white',
                   color: active ? TEAL : '#374151',
                 }}>
+                <span className="w-4 h-4 rounded flex-shrink-0 border-2 flex items-center justify-center transition-all"
+                  style={{ borderColor: active ? TEAL : '#d1d5db', backgroundColor: active ? TEAL : 'white' }}>
+                  {active && (
+                    <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </span>
                 {product}
               </button>
             );
           })}
-          <button onClick={() => pick('Other')}
-            className="py-3 px-4 rounded-xl text-sm font-semibold border-2 text-left transition-all"
+          <button onClick={toggleOther}
+            className="py-3 px-4 rounded-xl text-sm font-semibold border-2 text-left transition-all flex items-center gap-2"
             style={{
-              borderColor: selected === 'Other' ? TEAL : '#e5e7eb',
-              backgroundColor: selected === 'Other' ? `${TEAL}12` : 'white',
-              color: selected === 'Other' ? TEAL : '#374151',
+              borderColor: showOther ? TEAL : '#e5e7eb',
+              backgroundColor: showOther ? `${TEAL}12` : 'white',
+              color: showOther ? TEAL : '#374151',
             }}>
+            <span className="w-4 h-4 rounded flex-shrink-0 border-2 flex items-center justify-center transition-all"
+              style={{ borderColor: showOther ? TEAL : '#d1d5db', backgroundColor: showOther ? TEAL : 'white' }}>
+              {showOther && (
+                <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              )}
+            </span>
             Other
           </button>
         </div>
-        {selected === 'Other' && (
+        {showOther && (
           <input
             type="text"
             value={custom}
@@ -322,7 +348,7 @@ function StepPlanetProduct({ value, onChange, onBack, onContinue }: {
       </div>
       <div className="flex justify-between pt-6">
         <button onClick={onBack} className="px-6 py-2.5 rounded-full text-sm font-medium text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors">Back</button>
-        <button onClick={onContinue} disabled={!value.trim()}
+        <button onClick={onContinue} disabled={value.length === 0}
           className="px-8 py-2.5 rounded-full text-sm font-semibold text-white disabled:opacity-40 transition-colors"
           style={{ backgroundColor: TEAL }}>Continue</button>
       </div>
@@ -536,6 +562,7 @@ function StepQuestions({
 }) {
   const isLast = currentIdx === questions.length - 1;
   const canContinue = !!answers[currentIdx]?.trim();
+  const allAnswered = questions.every((_, i) => !!answers[i]?.trim());
 
   return (
     <div className="max-w-xl mx-auto">
@@ -621,7 +648,7 @@ function StepQuestions({
         </button>
         <button
           onClick={isLast ? onFinish : () => onSetIdx(currentIdx + 1)}
-          disabled={!canContinue}
+          disabled={isLast ? !allAnswered : !canContinue}
           className="px-8 py-2.5 rounded-full text-sm font-semibold text-white disabled:opacity-40 transition-colors"
           style={{ backgroundColor: TEAL }}
         >
@@ -762,7 +789,7 @@ export default function IntakePage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [frequency, setFrequency] = useState<Frequency>('');
-  const [planetProduct, setPlanetProduct] = useState('');
+  const [planetProduct, setPlanetProduct] = useState<string[]>([]);
   const [regionFileName, setRegionFileName] = useState('');
   const [aiQuestions, setAiQuestions] = useState<string[]>(FALLBACK_QUESTIONS);
   const [answers, setAnswers] = useState<string[]>(['', '', '']);
@@ -787,7 +814,7 @@ export default function IntakePage() {
           useCase,
           region: regionFileName,
           dateRange: `${startDate} to ${endDate}`,
-          planetProduct,
+          planetProduct: planetProduct.join(', '),
           singleQuestion: true,
           existingQuestions: aiQuestions,
         }),
@@ -810,7 +837,7 @@ export default function IntakePage() {
     setStartDate('');
     setEndDate('');
     setFrequency('');
-    setPlanetProduct('');
+    setPlanetProduct([]);
     setRegionFileName('');
     setAiQuestions(FALLBACK_QUESTIONS);
     setAnswers(['', '', '']);
@@ -829,7 +856,7 @@ export default function IntakePage() {
         region={regionFileName}
         startDate={startDate}
         endDate={endDate}
-        planetProduct={planetProduct}
+        planetProduct={planetProduct.join(', ')}
         onDone={(qs) => {
           setAiQuestions(qs);
           setAnswers(new Array(qs.length).fill(''));
@@ -899,7 +926,7 @@ export default function IntakePage() {
             endDate={endDate}
             frequency={frequency}
             fileName={regionFileName}
-            planetProduct={planetProduct}
+            planetProduct={planetProduct.join(', ')}
             answers={answers}
             questions={aiQuestions}
             onStartOver={reset}
