@@ -5,6 +5,11 @@
 //   - src/lib/agent/planner.ts calls these in M2 to save assembled workflows
 //   - src/app/dashboard/page.tsx reads from here to list saved workflows
 //   - src/app/workflow/[id]/page.tsx reads from here to load a single workflow
+
+
+
+
+
 //
 // FUNCTIONS NEEDED:
 //
@@ -13,10 +18,38 @@
 //       returns a single workflow by id
 //       used by the workflow view page to load the notebook + intake JSON
 //
+
+// convex/workflowQueries.ts
+
+
+import { v } from "convex/values";
+import { query } from "./_generated/server";
+
+export const getWorkflow = query({
+  args: { id: v.id("workflows") },
+  handler: async (ctx, { id }) => {
+    return await ctx.db.get(id);
+  },
+});
+
+export const getUserWorkflows = query({
+  args: { userId: v.string() },
+  handler: async (ctx, { userId }) => {
+    return await ctx.db
+      .query("workflows")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .order("desc")
+      .collect();
+  },
+});
+
+
+
 //   - getUserWorkflows(userId)
 //       returns all workflows for a user
 //       used by the dashboard to list saved workflows
 //
+
 // mutations (write):
 //   - createWorkflow(userId, intakeJson, notebookCells, sourceCells)
 //       called after assembly is complete in M2
