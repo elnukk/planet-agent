@@ -123,7 +123,6 @@ export const updateUser = mutation({
     }
 
     await ctx.db.patch(id, updates);
-
     return await ctx.db.get(id);
   },
 });
