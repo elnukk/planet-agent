@@ -15,6 +15,7 @@ import {
   type Workflow,
   type DeletedWorkflow,
 } from '@/lib/auth';
+import { getWorkflowImage } from '@/lib/workflowImages';
 import planetLogo from './planetlogo.png';
 
 const GRADIENTS = [
@@ -55,12 +56,20 @@ function WorkflowCard({
   onClick: () => void;
   onDelete: () => void;
 }) {
+  const [imgUrl, setImgUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    setImgUrl(getWorkflowImage(workflow.id));
+  }, [workflow.id]);
+
   return (
     <div className="group relative rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-200">
       <button onClick={onClick} className="w-full text-left focus:outline-none">
         <div
           className="w-full aspect-square flex items-end p-3"
-          style={{ background: cardGradient(workflow.id) }}
+          style={imgUrl
+            ? { backgroundImage: `url(${imgUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+            : { background: cardGradient(workflow.id) }}
         >
           <span className="text-white text-sm font-semibold leading-snug drop-shadow-md line-clamp-2">
             {workflow.name}

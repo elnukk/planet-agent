@@ -164,3 +164,4 @@ export default defineSchema({
     .index("by_workflowId", ["workflowId"])
     .index("by_createdAt", ["createdAt"]),
 });
+
