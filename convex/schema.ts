@@ -5,11 +5,17 @@
 // TABLES NEEDED:
 //
 // users
-//   - name, email, createdAt
+//   - unique id, full name, email address, createdAt, password (encrypted???), phone number, community organization name, your role in organization, API key description, API key value
 //
 // workflows
-//   - belongs to a user
-//   - stores the full intakeJson (see intake_bot.py for the schema shape)
+//   - belongs to a user (unique id)
+//- what is your use case (stores the use case)
+//- time frame of analysis (Past 3 Months/3mo, Past 6 Months/6mo, Past Year/1yr, Past 2 Years/2yr, Past 5 Years/5yr, Custom Range)
+//- data frequency (daily, weekly, monthly, quarterly)
+//   - stores the full region intakeJson (it's a json, geojson, or KML file - see intake_bot.py for the schema shape)
+//- follow up question 1 (we ask that, so don't store) and user answer 1 (store this)
+//- follow up question 2 (we ask that, so don't store) and user answer 2 (store this)
+//- follow up question 3 (we ask that, so don't store) and user answer 3 (store this)
 //   - stores the assembled notebook as an array of cells (cell_type, source)
 //   - stores which source notebook cells were used (notebook filename, cell_index, content)
 //   - createdAt, updatedAt
