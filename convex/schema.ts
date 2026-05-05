@@ -162,6 +162,7 @@ export default defineSchema({
     content: v.string(),
   })
     .index("by_workflowId", ["workflowId"])
-    .index("by_createdAt", ["createdAt"]),
+    .index("by_createdAt", ["createdAt"])
+    .index("by_workflow_createdAt", ["workflowId", "createdAt"]),
 });
 
