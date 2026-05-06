@@ -7,7 +7,9 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3001)",
       "Bash(curl -s -X POST http://localhost:3000/api/intake-questions -H 'Content-Type: application/json' -d '{\"useCase\":\"crop health\",\"region\":\"Nile Delta\",\"dateRange\":\"2024-01-01 to 2025-01-01\",\"planetProduct\":\"PlanetScope\"}')",
       "Bash(curl -s -X POST http://localhost:3000/api/intake-questions -H 'Content-Type: application/json' -d '{\"useCase\":\"crop health monitoring\",\"region\":\"Nile Delta\",\"dateRange\":\"2024-01-01 to 2025-01-01\",\"planetProduct\":\"PlanetScope\"}')",
-      "Bash(python3 -c \"import json; d=json.load\\(open\\('/Users/elanukarakus/cs52/knowledge-base/data/notebooks_metadata.json'\\)\\); print\\(f'{len\\(d\\)} notebooks indexed'\\)\")"
+      "Bash(python3 -c \"import json; d=json.load\\(open\\('/Users/elanukarakus/cs52/knowledge-base/data/notebooks_metadata.json'\\)\\); print\\(f'{len\\(d\\)} notebooks indexed'\\)\")",
+      "Bash(cd /home/sulegl32/planetProject/chatbot/planet-agent 2>/dev/null || find /home -name \"planet-agent\" -type d 2>/dev/null | head -1)",
+      "Read(///wsl.localhost/Ubuntu//**)"
     ]
   }
 }
