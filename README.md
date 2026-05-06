@@ -1,13 +1,5 @@
 # planet-agent
 
-## Jolie Updates - Apr 14
-
-- Added all Jupyter notebooks into a folder
-- Created a notebooks_metadata.json
-  For full documentation see: [knowledge-base/README.md](knowledge-base/README.md).
-
----
-
 ## Wiring Convex to the Frontend
 
 The backend schema and Convex function stubs are already written for you in `convex/`. `ConvexProvider` is already wired up in `src/app/layout.tsx` — add `NEXT_PUBLIC_CONVEX_URL` to your `.env` (run `npx convex dev` to get the value). Your job is to implement the Convex functions and replace the existing `localStorage`-based logic with real Convex queries and mutations.
