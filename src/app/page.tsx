@@ -3,7 +3,10 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import { useMutation } from 'convex/react';
+import { api } from '../../convex/_generated/api';
 import { signIn, createAccount, getCurrentUser, resetPassword } from '@/lib/auth';
+
 import loginBg from './dashboard/loginbackground.png';
 import planetLogo from './dashboard/planetlogo.png';
 
@@ -134,6 +137,7 @@ const INPUT = 'w-full px-4 py-3 border border-gray-200 rounded-full text-sm plac
 // ─── Main auth page ───────────────────────────────────────────────────────────
 export default function AuthPage() {
   const router = useRouter();
+  const createUser = useMutation(api.users.createUser);
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<Mode>('login');
 
@@ -203,6 +207,7 @@ export default function AuthPage() {
           apiKeys,
         });
         if (result === 'exists') { setError('An account with this email already exists.'); return; }
+        await createUser({ name: name.trim(), email: email.toLowerCase().trim() });
         router.push('/dashboard');
       }
     } finally {
