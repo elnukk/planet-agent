@@ -3,10 +3,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Image from 'next/image';
+import { useQuery } from 'convex/react';
+import { api } from '../../../../convex/_generated/api';
+import type { Id } from '../../../../convex/_generated/dataModel';
 import planetLogo from '../../dashboard/planetlogo.png';
-import { getWorkflowIntake, type IntakeJSON } from '@/lib/workflowIntake';
-import { getUserWorkflows } from '@/lib/auth';
-import { getCurrentUser } from '@/lib/auth';
+import type { IntakeJSON } from '@/lib/workflowIntake';
 
 const TEAL = '#009DA5';
 
@@ -361,28 +362,32 @@ export default function WorkflowPage() {
   const params = useParams();
   const workflowId = params?.id as string;
 
-  const [intake, setIntake] = useState<IntakeJSON | null>(null);
-  const [workflowName, setWorkflowName] = useState('Workflow');
+  const convexWorkflow = useQuery(
+    api.workflows.getWorkflow,
+    workflowId ? { id: workflowId as Id<'workflows'> } : 'skip'
+  );
+
+  const intake: IntakeJSON | null = convexWorkflow
+    ? {
+        region: convexWorkflow.region,
+        date_range: convexWorkflow.dateRange,
+        temporal_resolution: convexWorkflow.temporalResolution ?? 'unknown',
+        planet_product: convexWorkflow.planetProduct,
+        use_case: convexWorkflow.useCase,
+        user_description: convexWorkflow.userDescription ?? '',
+        inferred_intent: convexWorkflow.inferredIntent ?? '',
+        constraints: convexWorkflow.constraints ?? [],
+      }
+    : null;
+
+  const workflowName = convexWorkflow?.name ?? 'Workflow';
+
   const [showCode, setShowCode] = useState(true);
   const [ranCells, setRanCells] = useState<Set<string>>(new Set());
   const [runningAll, setRunningAll] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
 
-  useEffect(() => {
-    setMounted(true);
-    if (!workflowId) return;
-    const stored = getWorkflowIntake(workflowId);
-    setIntake(stored);
-
-    const user = getCurrentUser();
-    if (user) {
-      const wf = getUserWorkflows(user.id).find((w) => w.id === workflowId);
-      if (wf) setWorkflowName(wf.name);
-    }
-  }, [workflowId]);
-
-  const cells = mounted ? buildCells(intake) : PLACEHOLDER_CELLS;
+  const cells = buildCells(intake);
 
   function runCell(id: string) {
     setRanCells((prev) => new Set([...prev, id]));

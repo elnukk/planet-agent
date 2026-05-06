@@ -3,9 +3,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { getCurrentUser, createWorkflow } from '@/lib/auth';
+import { useMutation } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
+import { getCurrentUser } from '@/lib/auth';
 import { storeWorkflowImage } from '@/lib/workflowImages';
-import { storeWorkflowIntake, type IntakeJSON } from '@/lib/workflowIntake';
+import { type IntakeJSON } from '@/lib/workflowIntake';
 import planetLogo from '../dashboard/planetlogo.png';
 
 const TEAL = '#009DA5';
@@ -659,6 +661,23 @@ function StepQuestions({
   );
 }
 
+// ─── Helpers for schema type mapping ─────────────────────────────────────────
+function deriveTimeFrame(start: string, end: string): '3mo' | '6mo' | '1yr' | '2yr' | '5yr' | 'custom' {
+  const months = (new Date(end).getTime() - new Date(start).getTime()) / (1000 * 60 * 60 * 24 * 30.44);
+  if (Math.abs(months - 3) < 0.5) return '3mo';
+  if (Math.abs(months - 6) < 0.5) return '6mo';
+  if (Math.abs(months - 12) < 1) return '1yr';
+  if (Math.abs(months - 24) < 1) return '2yr';
+  if (Math.abs(months - 60) < 2) return '5yr';
+  return 'custom';
+}
+
+const VALID_RESOLUTIONS = ['daily', 'weekly', 'biweekly', 'monthly', 'seasonal', 'unknown'] as const;
+type TemporalResolution = typeof VALID_RESOLUTIONS[number];
+function toTemporalResolution(val: string): TemporalResolution {
+  return (VALID_RESOLUTIONS as readonly string[]).includes(val) ? (val as TemporalResolution) : 'unknown';
+}
+
 // ─── Step 8: Summary + workflow creation ──────────────────────────────────────
 function StepSummary({ useCase, startDate, endDate, frequency, fileName, planetProduct, answers, questions, onStartOver }: {
   useCase: string;
@@ -672,6 +691,8 @@ function StepSummary({ useCase, startDate, endDate, frequency, fileName, planetP
   onStartOver: () => void;
 }) {
   const router = useRouter();
+  const createUserMutation = useMutation(api.users.createUser);
+  const createWorkflowMutation = useMutation(api.workflows.createWorkflow);
   const [workflowName, setWorkflowName] = useState(
     () => useCase.trim().split('\n')[0].trim().slice(0, 60) || 'New Workflow'
   );
@@ -705,14 +726,49 @@ function StepSummary({ useCase, startDate, endDate, frequency, fileName, planetP
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function handleCreate() {
-    const user = getCurrentUser();
-    if (!user || !workflowName.trim()) return;
+  async function handleCreate() {
+    const localUser = getCurrentUser();
+    if (!localUser || !workflowName.trim()) return;
     setCreating(true);
-    const wf = createWorkflow(user.id, workflowName.trim());
-    if (aiImageDataUrl) storeWorkflowImage(wf.id, aiImageDataUrl);
-    if (intakeRef.current) storeWorkflowIntake(wf.id, intakeRef.current);
-    router.push(`/workflow/${wf.id}`);
+    try {
+      const convexUserId = await createUserMutation({
+        name: localUser.name,
+        email: localUser.email,
+      });
+
+      const intake = intakeRef.current;
+      const timeFrame = deriveTimeFrame(startDate, endDate);
+      const dataFrequency = frequency.toLowerCase() as 'daily' | 'weekly' | 'monthly' | 'quarterly';
+
+      const convexId = await createWorkflowMutation({
+        userId: convexUserId,
+        name: workflowName.trim(),
+        useCase,
+        timeFrame,
+        dataFrequency,
+        region: intake?.region ?? {
+          type: 'Feature',
+          properties: {},
+          geometry: { type: 'Polygon', coordinates: [] },
+          description: fileName,
+        },
+        dateRange: intake?.date_range ?? { start: startDate, end: endDate },
+        temporalResolution: intake?.temporal_resolution
+          ? toTemporalResolution(intake.temporal_resolution)
+          : undefined,
+        planetProduct,
+        inferredIntent: intake?.inferred_intent ?? undefined,
+        userDescription: intake?.user_description ?? undefined,
+        constraints: intake?.constraints ?? undefined,
+        followUpQA: questions.map((q, i) => ({ question: q, answer: answers[i] ?? '' })),
+      });
+
+      if (aiImageDataUrl) storeWorkflowImage(String(convexId), aiImageDataUrl);
+      router.push(`/workflow/${convexId}`);
+    } catch (e) {
+      console.error('[handleCreate] Convex error', e);
+      setCreating(false);
+    }
   }
 
   const summaryRows = [

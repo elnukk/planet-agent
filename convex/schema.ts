@@ -73,6 +73,9 @@ export default defineSchema({
     // ownership
     userId: v.id("users"),
 
+    // display
+    name: v.string(),
+
     // ─── Layer 1 + Intake core fields ───
     useCase: v.string(),
 
