@@ -29,7 +29,7 @@ export const getWorkflow = query({
 });
 
 export const getUserWorkflows = query({
-  args: { userId: v.string() },
+  args: { userId: v.id("users") },
   handler: async (ctx, { userId }) => {
     return await ctx.db
       .query("workflows")
