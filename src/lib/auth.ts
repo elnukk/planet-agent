@@ -9,6 +9,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  convexUserId?: string;
   phone?: string;
   organization?: string;
   role?: string;
@@ -282,4 +283,14 @@ export function purgeExpiredWorkflows(): void {
   if (kept.length !== trash.length) {
     localStorage.setItem(TRASH_KEY, JSON.stringify(kept));
   }
+}
+
+export function setConvexUserId(localUserId: string, convexUserId: string): void {
+  const users = getUsers();
+  const idx = users.findIndex((u) => u.id === localUserId);
+  if (idx === -1) return;
+  users[idx] = { ...users[idx], convexUserId };
+  saveUsers(users);
+  const session = getCurrentUser();
+  if (session?.id === localUserId) refreshSession(users[idx]);
 }

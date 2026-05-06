@@ -3,10 +3,41 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { getCurrentUser, createWorkflow } from '@/lib/auth';
+import { useMutation } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
+import type { Id } from 'convex/values';
+import { getCurrentUser } from '@/lib/auth';
 import { storeWorkflowImage } from '@/lib/workflowImages';
-import { storeWorkflowIntake, type IntakeJSON } from '@/lib/workflowIntake';
+import { type IntakeJSON } from '@/lib/workflowIntake';
 import planetLogo from '../dashboard/planetlogo.png';
+
+function inferTimeFrame(start: string, end: string): "3mo" | "6mo" | "1yr" | "2yr" | "5yr" | "custom" {
+  const months = Math.round(
+    (new Date(end).getTime() - new Date(start).getTime()) / (1000 * 60 * 60 * 24 * 30.5)
+  );
+  if (months <= 3) return '3mo';
+  if (months <= 6) return '6mo';
+  if (months <= 13) return '1yr';
+  if (months <= 26) return '2yr';
+  if (months <= 62) return '5yr';
+  return 'custom';
+}
+
+function mapFrequency(f: string): "daily" | "weekly" | "monthly" | "quarterly" {
+  const lower = f.toLowerCase();
+  if (lower === 'daily') return 'daily';
+  if (lower === 'weekly') return 'weekly';
+  if (lower === 'quarterly') return 'quarterly';
+  return 'monthly';
+}
+
+function mapTemporalResolution(tr: string | undefined): "daily" | "weekly" | "biweekly" | "monthly" | "seasonal" | "unknown" {
+  const valid = ['daily', 'weekly', 'biweekly', 'monthly', 'seasonal'] as const;
+  const lower = (tr ?? '').toLowerCase();
+  return (valid as readonly string[]).includes(lower)
+    ? lower as "daily" | "weekly" | "biweekly" | "monthly" | "seasonal"
+    : 'unknown';
+}
 
 const TEAL = '#009DA5';
 type Frequency = 'Daily' | 'Weekly' | 'Monthly' | 'Quarterly' | '';
@@ -672,6 +703,7 @@ function StepSummary({ useCase, startDate, endDate, frequency, fileName, planetP
   onStartOver: () => void;
 }) {
   const router = useRouter();
+  const createConvexWorkflow = useMutation(api.workflows.createWorkflow);
   const [workflowName, setWorkflowName] = useState(
     () => useCase.trim().split('\n')[0].trim().slice(0, 60) || 'New Workflow'
   );
@@ -705,14 +737,33 @@ function StepSummary({ useCase, startDate, endDate, frequency, fileName, planetP
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function handleCreate() {
+  async function handleCreate() {
     const user = getCurrentUser();
-    if (!user || !workflowName.trim()) return;
+    if (!user?.convexUserId || !workflowName.trim()) return;
     setCreating(true);
-    const wf = createWorkflow(user.id, workflowName.trim());
-    if (aiImageDataUrl) storeWorkflowImage(wf.id, aiImageDataUrl);
-    if (intakeRef.current) storeWorkflowIntake(wf.id, intakeRef.current);
-    router.push(`/workflow/${wf.id}`);
+    try {
+      const intake = intakeRef.current;
+      const convexId = await createConvexWorkflow({
+        userId: user.convexUserId as Id<'users'>,
+        useCase: workflowName.trim(),
+        timeFrame: inferTimeFrame(startDate, endDate),
+        dataFrequency: mapFrequency(frequency),
+        region: intake?.region ?? { description: fileName },
+        dateRange: { start: startDate, end: endDate },
+        temporalResolution: mapTemporalResolution(intake?.temporal_resolution),
+        planetProduct: planetProduct,
+        inferredIntent: intake?.inferred_intent,
+        userDescription: intake?.user_description,
+        constraints: intake?.constraints,
+        followUpQA: questions.map((q, i) => ({ question: q, answer: answers[i] || '' })),
+        notebookCells: [],
+        sourceNotebooks: [],
+      });
+      if (aiImageDataUrl) storeWorkflowImage(convexId as string, aiImageDataUrl);
+      router.push(`/workflow/${convexId}`);
+    } finally {
+      setCreating(false);
+    }
   }
 
   const summaryRows = [
