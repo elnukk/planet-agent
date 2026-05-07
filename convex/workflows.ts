@@ -113,9 +113,18 @@ export const updateWorkflow = mutation({
       cellType: v.union(v.literal("code"), v.literal("markdown"), v.literal("text")),
       source: v.string(),
     })),
+    sourceNotebooks: v.optional(v.array(v.object({
+      filename: v.string(),
+      cellIndex: v.number(),
+      content: v.string(),
+    }))),
   },
-  handler: async (ctx, { id, notebookCells }) => {
-    await ctx.db.patch(id, { notebookCells, updatedAt: Date.now() });
+  handler: async (ctx, { id, notebookCells, sourceNotebooks }) => {
+    if (sourceNotebooks !== undefined) {
+      await ctx.db.patch(id, { notebookCells, sourceNotebooks, updatedAt: Date.now() });
+    } else {
+      await ctx.db.patch(id, { notebookCells, updatedAt: Date.now() });
+    }
   },
 });
 

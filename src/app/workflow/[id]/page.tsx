@@ -20,99 +20,15 @@ interface Cell {
   output?: string;
 }
 
-function buildCells(intake: IntakeJSON | null): Cell[] {
-  if (!intake) return PLACEHOLDER_CELLS;
-
-  const regionDesc = intake.region?.description || 'the specified region';
-  const dateStart = intake.date_range?.start || '—';
-  const dateEnd = intake.date_range?.end || '—';
-  const product = intake.planet_product || 'Planet imagery';
-  const useCase = intake.use_case || 'satellite data analysis';
-
-  return [
-    {
-      id: 'md-intro',
-      type: 'markdown',
-      source: `## ${intake.use_case ? intake.use_case.charAt(0).toUpperCase() + intake.use_case.slice(1) : 'Satellite Analysis'} Workflow\n\n${intake.inferred_intent || `This workflow analyzes ${product} imagery for ${useCase} in ${regionDesc}.`}${intake.constraints?.length ? `\n\n**Constraints:** ${intake.constraints.join(' · ')}` : ''}`,
-    },
-    {
-      id: 'code-auth',
-      type: 'code',
-      source: `import planet
-import numpy as np
-import matplotlib.pyplot as plt
-
-# Initialize authenticated Planet client
-client = planet.Session()
-print("Planet SDK initialized successfully.")`,
-      output: 'Planet SDK initialized successfully.',
-    },
-    {
-      id: 'code-aoi',
-      type: 'code',
-      source: `# Area of interest: ${regionDesc}
-aoi_description = "${regionDesc}"
-
-# Date range from intake
-start_date = "${dateStart}"
-end_date   = "${dateEnd}"
-product    = "${product}"
-
-print(f"Region  : {aoi_description}")
-print(f"Period  : {start_date} → {end_date}")
-print(f"Product : {product}")`,
-      output: `Region  : ${regionDesc}\nPeriod  : ${dateStart} → ${dateEnd}\nProduct : ${product}`,
-    },
-    {
-      id: 'code-search',
-      type: 'code',
-      source: `# Search for available ${product} imagery
-search_filter = planet.filters.and_filter(
-    planet.filters.date_range("acquired",
-        gte=start_date, lte=end_date),
-    planet.filters.geom_filter(aoi)
-)
-
-results = client.quick_search(
-    item_types=["PSScene"],
-    filter=search_filter
-)
-print(f"Found {{len(results)}} scenes across the period")`,
-      output: 'Found scenes — run to query live results',
-    },
-    {
-      id: 'md-analysis',
-      type: 'markdown',
-      source: `### Analysis\n\nThe next cells perform the core ${useCase} analysis over ${regionDesc} using ${product} data from ${dateStart} to ${dateEnd}.`,
-    },
-    {
-      id: 'code-analysis',
-      type: 'code',
-      source: `# Core analysis: ${useCase}
-# TODO: implement analysis logic based on your intake parameters
-# Constraints to consider: ${intake.constraints?.join(', ') || 'none specified'}
-
-print("Ready to run analysis.")`,
-      output: 'Ready to run analysis.',
-    },
-  ];
+function fromConvexCells(
+  convexCells: Array<{ cellType: string; source: string }>,
+): Cell[] {
+  return convexCells.map((c, i) => ({
+    id: `cell-${i}`,
+    type: c.cellType === 'code' ? 'code' : 'markdown',
+    source: c.source,
+  }));
 }
-
-const PLACEHOLDER_CELLS: Cell[] = [
-  {
-    id: 'md-1',
-    type: 'markdown',
-    source: `## Satellite Analysis Workflow\n\nThis workflow was created without intake data. Complete the intake form to generate a personalized workflow.`,
-  },
-  {
-    id: 'code-1',
-    type: 'code',
-    source: `import planet
-client = planet.Session()
-print("Planet SDK initialized successfully.")`,
-    output: 'Planet SDK initialized successfully.',
-  },
-];
 
 const BOT_REPLIES = [
   'I can help you refine the analysis parameters. What would you like to adjust?',
@@ -391,9 +307,62 @@ export default function WorkflowPage() {
   const [ranCells, setRanCells] = useState<Set<string>>(new Set());
   const [runningAll, setRunningAll] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [assembleError, setAssembleError] = useState<string | null>(null);
+  const [timedOut, setTimedOut] = useState(false);
+  const assembleTriggered = useRef(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // undefined = still loading, null = not found, object = loaded
-  const cells = workflowData !== undefined ? buildCells(intake) : PLACEHOLDER_CELLS;
+  function triggerAssembly(wd: NonNullable<typeof workflowData>) {
+    if (assembleTriggered.current) return;
+    assembleTriggered.current = true;
+    setAssembleError(null);
+    setTimedOut(false);
+
+    const intakeForAgent = {
+      region: wd.region,
+      date_range: wd.dateRange,
+      temporal_resolution: wd.temporalResolution ?? 'unknown',
+      planet_product: wd.planetProduct,
+      use_case: wd.useCase,
+      user_description: wd.userDescription ?? '',
+      inferred_intent: wd.inferredIntent ?? '',
+      constraints: wd.constraints ?? [],
+    };
+
+    // Route returns 200 immediately; assembly runs in the background on the server.
+    // Convex reactive query picks up notebookCells when the agent finishes.
+    fetch('/api/assemble-workflow', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ intake: intakeForAgent, workflowId }),
+    }).catch((e: unknown) => setAssembleError(String(e)));
+
+    // Safety timeout: if cells haven't arrived in 10 min, surface an error.
+    timeoutRef.current = setTimeout(() => setTimedOut(true), 10 * 60 * 1000);
+  }
+
+  useEffect(() => {
+    if (!workflowId || workflowData === undefined || workflowData === null) return;
+    if (workflowData.notebookCells.length > 0) {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      return;
+    }
+    triggerAssembly(workflowData);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workflowData, workflowId]);
+
+  function retryAssembly() {
+    if (!workflowData) return;
+    assembleTriggered.current = false;
+    setTimedOut(false);
+    setAssembleError(null);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    triggerAssembly(workflowData);
+  }
+
+  const convexCells = workflowData?.notebookCells ?? [];
+  const hasRealCells = convexCells.length > 0;
+  const cells: Cell[] = hasRealCells ? fromConvexCells(convexCells) : [];
 
   function runCell(id: string) {
     setRanCells((prev) => new Set([...prev, id]));
@@ -416,7 +385,7 @@ export default function WorkflowPage() {
       <div className="border-b border-gray-200 bg-white px-6 py-3 flex items-center gap-3 sticky top-20 z-10">
         <button
           onClick={runAll}
-          disabled={runningAll}
+          disabled={runningAll || !hasRealCells}
           className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold text-white disabled:opacity-60 transition-all"
           style={{ backgroundColor: TEAL }}
         >
@@ -446,7 +415,9 @@ export default function WorkflowPage() {
         </button>
 
         <span className="text-xs text-gray-400 ml-auto">
-          {ranCells.size}/{cells.filter((c) => c.type === 'code').length} cells run
+          {hasRealCells
+            ? `${ranCells.size}/${cells.filter((c) => c.type === 'code').length} cells run`
+            : assembleTriggered.current ? 'Building…' : '—'}
         </span>
       </div>
 
@@ -467,7 +438,42 @@ export default function WorkflowPage() {
           )}
         </div>
 
-        {cells.map((cell) =>
+        {!hasRealCells && workflowData !== undefined && workflowData !== null && !assembleError && !timedOut && (
+          <div className="rounded-xl border border-teal-100 bg-teal-50 px-5 py-4 flex items-center gap-4">
+            <div
+              className="w-5 h-5 rounded-full border-2 border-t-transparent flex-shrink-0 animate-spin"
+              style={{ borderColor: `${TEAL} ${TEAL} ${TEAL} transparent` }}
+            />
+            <div>
+              <p className="text-sm font-semibold text-teal-800">Building your workflow…</p>
+              <p className="text-xs text-teal-600 mt-0.5">
+                The agent is searching notebooks and assembling analysis steps. This may take a few minutes — please do not close this tab.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {(assembleError || timedOut) && !hasRealCells && (
+          <div className="rounded-xl border border-red-100 bg-red-50 px-5 py-4 flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-red-700">
+                {timedOut ? 'Assembly is taking longer than expected' : 'Failed to reach the agent'}
+              </p>
+              <p className="text-xs text-red-500 mt-1 font-mono">
+                {assembleError ?? 'Make sure the Python server is running: python knowledge-base/api_server.py'}
+              </p>
+            </div>
+            <button
+              onClick={retryAssembly}
+              className="flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors"
+              style={{ borderColor: TEAL, color: TEAL }}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {hasRealCells && cells.map((cell) =>
           cell.type === 'markdown' ? (
             <MarkdownCell key={cell.id} source={cell.source} />
           ) : (
