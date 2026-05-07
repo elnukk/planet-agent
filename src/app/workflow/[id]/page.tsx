@@ -3,10 +3,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Image from 'next/image';
+import { useQuery, useMutation } from 'convex/react';
+import { api } from '../../../../convex/_generated/api';
+import type { Id } from 'convex/values';
 import planetLogo from '../../dashboard/planetlogo.png';
-import { getWorkflowIntake, type IntakeJSON } from '@/lib/workflowIntake';
-import { getUserWorkflows } from '@/lib/auth';
-import { getCurrentUser } from '@/lib/auth';
+import { type IntakeJSON } from '@/lib/workflowIntake';
 
 const TEAL = '#009DA5';
 
@@ -113,11 +114,6 @@ print("Planet SDK initialized successfully.")`,
   },
 ];
 
-interface Message {
-  role: 'user' | 'bot';
-  text: string;
-}
-
 const BOT_REPLIES = [
   'I can help you refine the analysis parameters. What would you like to adjust?',
   'Based on your intake, I can suggest additional preprocessing steps. Would you like me to add them?',
@@ -125,6 +121,13 @@ const BOT_REPLIES = [
   'Happy to add a cloud-masking step — cloud cover is a common source of false positives.',
   'The constraints from your intake have been factored into the workflow structure.',
 ];
+
+interface ConvexMessage {
+  _id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: number;
+}
 
 function NavBar() {
   const router = useRouter();
@@ -246,19 +249,18 @@ function IntakeSummaryCard({ intake }: { intake: IntakeJSON }) {
   );
 }
 
-function ChatPanel({ intake, onClose }: { intake: IntakeJSON | null; onClose: () => void }) {
+function ChatPanel({ workflowId, intake, onClose }: { workflowId: string; intake: IntakeJSON | null; onClose: () => void }) {
   const context = intake
     ? `Use case: ${intake.use_case}. Region: ${intake.region?.description}. Product: ${intake.planet_product}. Intent: ${intake.inferred_intent}.`
     : '';
 
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: 'bot',
-      text: intake
-        ? `Hi! I'm the Project Centinela assistant. I can see your workflow is for ${intake.use_case || 'satellite analysis'} in ${intake.region?.description || 'your region'}. How can I help?`
-        : "Hi! I'm the Project Centinela workflow assistant. Ask me anything about this analysis.",
-    },
-  ]);
+  const convexMessages = useQuery(
+    api.conversations.getConversation,
+    { workflowId: workflowId as Id<'workflows'> },
+  ) as ConvexMessage[] | undefined;
+
+  const sendMessage = useMutation(api.conversations.sendMessage);
+
   const [input, setInput] = useState('');
   const [replyIdx, setReplyIdx] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -266,25 +268,15 @@ function ChatPanel({ intake, onClose }: { intake: IntakeJSON | null; onClose: ()
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [convexMessages]);
 
   async function send() {
     const text = input.trim();
     if (!text) return;
-    setMessages((m) => [...m, { role: 'user', text }]);
     setInput('');
     setLoading(true);
 
-    const apiKey = (window as Window & { __GEMINI_KEY__?: string }).__GEMINI_KEY__;
-    if (!apiKey) {
-      // fallback to canned replies if no key in window
-      setTimeout(() => {
-        setMessages((m) => [...m, { role: 'bot', text: BOT_REPLIES[replyIdx % BOT_REPLIES.length] }]);
-        setReplyIdx((i) => i + 1);
-        setLoading(false);
-      }, 700);
-      return;
-    }
+    await sendMessage({ workflowId: workflowId as Id<'workflows'>, role: 'user', content: text });
 
     try {
       const res = await fetch('/api/chat', {
@@ -293,15 +285,22 @@ function ChatPanel({ intake, onClose }: { intake: IntakeJSON | null; onClose: ()
         body: JSON.stringify({ message: text, context }),
       });
       const data = await res.json();
-      setMessages((m) => [...m, { role: 'bot', text: data.reply || BOT_REPLIES[replyIdx % BOT_REPLIES.length] }]);
+      const reply = data.reply || BOT_REPLIES[replyIdx % BOT_REPLIES.length];
+      await sendMessage({ workflowId: workflowId as Id<'workflows'>, role: 'assistant', content: reply });
       setReplyIdx((i) => i + 1);
     } catch {
-      setMessages((m) => [...m, { role: 'bot', text: BOT_REPLIES[replyIdx % BOT_REPLIES.length] }]);
+      const reply = BOT_REPLIES[replyIdx % BOT_REPLIES.length];
+      await sendMessage({ workflowId: workflowId as Id<'workflows'>, role: 'assistant', content: reply });
       setReplyIdx((i) => i + 1);
     } finally {
       setLoading(false);
     }
   }
+
+  const displayMessages = convexMessages ?? [];
+  const welcomeText = intake
+    ? `Hi! I'm the Project Centinela assistant. I can see your workflow is for ${intake.use_case || 'satellite analysis'} in ${intake.region?.description || 'your region'}. How can I help?`
+    : "Hi! I'm the Project Centinela workflow assistant. Ask me anything about this analysis.";
 
   return (
     <div className="fixed bottom-20 right-4 w-80 bg-white border border-gray-200 rounded-2xl shadow-2xl flex flex-col z-30 overflow-hidden">
@@ -314,15 +313,22 @@ function ChatPanel({ intake, onClose }: { intake: IntakeJSON | null; onClose: ()
         </button>
       </div>
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 max-h-72">
-        {messages.map((msg, i) => (
-          <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+        {displayMessages.length === 0 && (
+          <div className="flex justify-start">
+            <div className="bg-gray-100 text-gray-800 text-sm px-3 py-2 rounded-2xl rounded-bl-sm max-w-[85%] leading-snug">
+              {welcomeText}
+            </div>
+          </div>
+        )}
+        {displayMessages.map((msg) => (
+          <div key={msg._id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div
               className={`text-sm px-3 py-2 rounded-2xl max-w-[85%] leading-snug ${
                 msg.role === 'user' ? 'text-white rounded-br-sm' : 'bg-gray-100 text-gray-800 rounded-bl-sm'
               }`}
               style={msg.role === 'user' ? { backgroundColor: TEAL } : {}}
             >
-              {msg.text}
+              {msg.content}
             </div>
           </div>
         ))}
@@ -361,28 +367,33 @@ export default function WorkflowPage() {
   const params = useParams();
   const workflowId = params?.id as string;
 
-  const [intake, setIntake] = useState<IntakeJSON | null>(null);
-  const [workflowName, setWorkflowName] = useState('Workflow');
+  const workflowData = useQuery(
+    api.workflows.getWorkflow,
+    workflowId ? { id: workflowId as Id<'workflows'> } : 'skip',
+  );
+
+  const intake: IntakeJSON | null = workflowData
+    ? {
+        region: workflowData.region as IntakeJSON['region'],
+        date_range: workflowData.dateRange,
+        temporal_resolution: workflowData.temporalResolution ?? '',
+        planet_product: workflowData.planetProduct,
+        use_case: workflowData.useCase,
+        user_description: workflowData.userDescription ?? '',
+        inferred_intent: workflowData.inferredIntent ?? '',
+        constraints: workflowData.constraints ?? [],
+      }
+    : null;
+
+  const workflowName = workflowData?.useCase ?? 'Workflow';
+
   const [showCode, setShowCode] = useState(true);
   const [ranCells, setRanCells] = useState<Set<string>>(new Set());
   const [runningAll, setRunningAll] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
 
-  useEffect(() => {
-    setMounted(true);
-    if (!workflowId) return;
-    const stored = getWorkflowIntake(workflowId);
-    setIntake(stored);
-
-    const user = getCurrentUser();
-    if (user) {
-      const wf = getUserWorkflows(user.id).find((w) => w.id === workflowId);
-      if (wf) setWorkflowName(wf.name);
-    }
-  }, [workflowId]);
-
-  const cells = mounted ? buildCells(intake) : PLACEHOLDER_CELLS;
+  // undefined = still loading, null = not found, object = loaded
+  const cells = workflowData !== undefined ? buildCells(intake) : PLACEHOLDER_CELLS;
 
   function runCell(id: string) {
     setRanCells((prev) => new Set([...prev, id]));
@@ -488,7 +499,9 @@ export default function WorkflowPage() {
         )}
       </button>
 
-      {chatOpen && <ChatPanel intake={intake} onClose={() => setChatOpen(false)} />}
+      {chatOpen && workflowId && (
+        <ChatPanel workflowId={workflowId} intake={intake} onClose={() => setChatOpen(false)} />
+      )}
     </div>
   );
 }

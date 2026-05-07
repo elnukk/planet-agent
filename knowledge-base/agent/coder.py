@@ -238,6 +238,18 @@ def assemble_notebook(plan: dict) -> list[dict]:
     notebook_cells = _build_notebook_cells(plan, assembled)
     print(f"[coder] Done — {len(notebook_cells)} total cells")
 
+    print("\n" + "=" * 60)
+    print("ASSEMBLED NOTEBOOK")
+    print("=" * 60)
+    for cell in notebook_cells:
+        if cell["cell_type"] == "markdown":
+            print(f"\n[markdown]\n{cell['source']}")
+        else:
+            step_id = cell["metadata"].get("step_id")
+            label = f"Step {step_id}" if step_id is not None else "imports"
+            print(f"\n[code — {label}]\n{cell['source']}")
+    print("\n" + "=" * 60 + "\n")
+
     return notebook_cells
 
 
