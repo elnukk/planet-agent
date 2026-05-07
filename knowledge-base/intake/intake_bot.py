@@ -9,12 +9,11 @@ from pathlib import Path
 from google import genai
 from dotenv import load_dotenv
 
-
 ROOT_DIR = Path(__file__).resolve().parents[2]
 load_dotenv(dotenv_path=ROOT_DIR / ".env")
 
 # ─── CLIENT SETUP ─────────────────────────────────────────────────────────────
-gem_key = os.getenv("GEMINI_API_KEY")
+gem_key = os.getenv("GEMINI-API-KEY")
 if not gem_key:
     raise EnvironmentError("GEMINI_API_KEY environment variable is not set.")
 
@@ -44,7 +43,7 @@ def load_notebooks_metadata() -> dict:
     Falls back to the current directory if not found there.
     """
     search_paths = [
-        Path("knowledge-base/data/notebooks_metadata.json"),
+        Path("\planetProject\chatbot\planet-agent\knowledge-base\data\notebooks_metadata.json"),
         Path("notebooks_metadata.json"),
         Path(__file__).parent / "knowledge-base" / "data" / "notebooks_metadata.json",
         Path(__file__).parent / "notebooks_metadata.json",
