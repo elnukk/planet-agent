@@ -126,3 +126,28 @@ export const updateUser = mutation({
     return await ctx.db.get(id);
   },
 });
+
+export const setApiKey = mutation({
+  args: {
+    id: v.id("users"),
+    apiKeyValue: v.string(),
+    apiKeyDescription: v.optional(v.string()),
+  },
+  handler: async (ctx, { id, apiKeyValue, apiKeyDescription }) => {
+    const user = await ctx.db.get(id);
+    if (!user) throw new Error("User not found");
+    await ctx.db.patch(id, {
+      apiKeyValue,
+      apiKeyDescription: apiKeyDescription ?? "Planet API Key",
+    });
+  },
+});
+
+export const removeApiKey = mutation({
+  args: { id: v.id("users") },
+  handler: async (ctx, { id }) => {
+    const user = await ctx.db.get(id);
+    if (!user) throw new Error("User not found");
+    await ctx.db.patch(id, { apiKeyValue: undefined, apiKeyDescription: undefined });
+  },
+});

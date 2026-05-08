@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
-import type { Id } from 'convex/values';
+import type { Id } from '../../../convex/_generated/dataModel';
 import {
   getCurrentUser,
   setConvexUserId,

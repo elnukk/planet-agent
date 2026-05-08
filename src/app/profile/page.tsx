@@ -3,15 +3,15 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import { useQuery, useMutation } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
+import type { Id } from '../../../convex/_generated/dataModel';
 import {
   getCurrentUser,
   signOut,
   updateUser,
-  addApiKey,
-  removeApiKey,
   changePassword,
   type User,
-  type ApiKey,
 } from '@/lib/auth';
 import planetLogo from '../dashboard/planetlogo.png';
 
@@ -92,14 +92,25 @@ export default function ProfilePage() {
   const [pwError, setPwError] = useState('');
   const [pwSuccess, setPwSuccess] = useState(false);
 
-  // api key state
-  const [showAddKey, setShowAddKey] = useState(false);
-  const [newKeyDesc, setNewKeyDesc] = useState('');
-  const [newKeyValue, setNewKeyValue] = useState('');
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  // Planet API key (Convex-backed)
+  const [keyEditMode, setKeyEditMode] = useState(false);
+  const [keyInput, setKeyInput] = useState('');
+  const [revealKey, setRevealKey] = useState(false);
+  const [keySaving, setKeySaving] = useState(false);
+  const [keySaved, setKeySaved] = useState(false);
 
   // delete account
   const [deleteConfirm, setDeleteConfirm] = useState('');
+
+  const convexUserId = user?.convexUserId as Id<'users'> | undefined;
+  const convexUser = useQuery(
+    api.users.getUser,
+    convexUserId ? { id: convexUserId } : 'skip',
+  );
+  const setApiKeyMutation = useMutation(api.users.setApiKey);
+  const removeApiKeyMutation = useMutation(api.users.removeApiKey);
+
+  const savedApiKey = convexUser?.apiKeyValue ?? '';
 
   useEffect(() => {
     setMounted(true);
@@ -160,37 +171,40 @@ export default function ProfilePage() {
     setConfirmPw('');
   }
 
-  function handleAddKey(e: React.FormEvent) {
+  async function handleSavePlanetKey(e: React.FormEvent) {
     e.preventDefault();
-    if (!user || !newKeyDesc.trim() || !newKeyValue.trim()) return;
-    addApiKey(user.id, newKeyDesc.trim(), newKeyValue.trim());
-    refreshUser();
-    setNewKeyDesc('');
-    setNewKeyValue('');
-    setShowAddKey(false);
+    if (!convexUserId || !keyInput.trim()) return;
+    setKeySaving(true);
+    try {
+      await setApiKeyMutation({ id: convexUserId, apiKeyValue: keyInput.trim() });
+      setKeyEditMode(false);
+      setKeyInput('');
+      setRevealKey(false);
+      setKeySaved(true);
+      setTimeout(() => setKeySaved(false), 3000);
+    } finally {
+      setKeySaving(false);
+    }
   }
 
-  function handleRemoveKey(keyId: string) {
-    if (!user) return;
-    removeApiKey(user.id, keyId);
-    refreshUser();
+  async function handleRemovePlanetKey() {
+    if (!convexUserId) return;
+    await removeApiKeyMutation({ id: convexUserId });
+    setKeyEditMode(false);
+    setKeyInput('');
+    setRevealKey(false);
   }
 
-  function copyKey(k: ApiKey) {
-    navigator.clipboard.writeText(k.key);
-    setCopiedId(k.id);
-    setTimeout(() => setCopiedId(null), 2000);
-  }
-
-  function maskKey(k: string) {
-    if (k.length <= 8) return '••••••••';
-    return k.slice(0, 4) + '••••••••' + k.slice(-4);
+  function maskKey(k: string): string {
+    if (!k) return '';
+    const prefix = k.slice(0, Math.min(4, k.length));
+    const suffix = k.length > 8 ? k.slice(-4) : '';
+    return prefix + '••••••••' + suffix;
   }
 
   if (!mounted) return null;
 
   const prefs = user?.preferences ?? {};
-  const apiKeys = user?.apiKeys ?? [];
   const initials = (user?.name ?? '?')
     .split(' ')
     .map((w) => w[0])
@@ -339,88 +353,118 @@ export default function ProfilePage() {
                 )}
               </div>
 
-              {/* API Keys */}
+              {/* Planet API Key */}
               <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-base font-bold text-gray-900">API Keys</h2>
-                  {!showAddKey && (
-                    <button
-                      onClick={() => setShowAddKey(true)}
-                      className="flex items-center gap-1.5 text-sm font-medium px-4 py-1.5 rounded-full text-white"
-                      style={{ backgroundColor: TEAL }}
-                    >
+                <div className="flex items-center justify-between mb-2">
+                  <h2 className="text-base font-bold text-gray-900">Planet API Key</h2>
+                  {keySaved && (
+                    <span className="text-xs font-medium text-green-600 flex items-center gap-1">
                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                       </svg>
-                      Add Key
-                    </button>
+                      Saved
+                    </span>
                   )}
                 </div>
+                <p className="text-xs text-gray-400 mb-4">
+                  Used to authenticate your analysis workflows with Planet data services. Stored securely — never shared or logged.
+                </p>
 
-                {showAddKey && (
-                  <form onSubmit={handleAddKey} className="mb-4 p-4 bg-gray-50 rounded-xl space-y-3">
-                    <input type="text" value={newKeyDesc} onChange={(e) => setNewKeyDesc(e.target.value)}
-                      required placeholder="Key description (e.g. Planet NICFI API)"
-                      className={INPUT} />
-                    <input type="text" value={newKeyValue} onChange={(e) => setNewKeyValue(e.target.value)}
-                      required placeholder="API key value"
-                      className={INPUT} />
-                    <div className="flex gap-2">
-                      <button type="button" onClick={() => { setShowAddKey(false); setNewKeyDesc(''); setNewKeyValue(''); }}
-                        className="flex-1 py-2 rounded-xl text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors">
-                        Cancel
+                {!keyEditMode && savedApiKey ? (
+                  <div className="border border-gray-100 rounded-xl px-4 py-3.5 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">API Key</p>
+                      <p className="text-sm font-mono text-gray-800">
+                        {revealKey ? savedApiKey : maskKey(savedApiKey)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => setRevealKey((v) => !v)}
+                        title={revealKey ? 'Hide key' : 'Reveal key'}
+                        className="p-2 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                      >
+                        {revealKey ? (
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88" />
+                          </svg>
+                        ) : (
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                          </svg>
+                        )}
                       </button>
-                      <button type="submit"
-                        className="flex-1 py-2 rounded-xl text-sm font-semibold text-white transition-colors"
-                        style={{ backgroundColor: TEAL }}>
-                        Save Key
+                      <button
+                        onClick={() => { setKeyInput(''); setKeyEditMode(true); }}
+                        title="Edit key"
+                        className="p-2 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={handleRemovePlanetKey}
+                        title="Remove key"
+                        className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                ) : keyEditMode || !savedApiKey ? (
+                  <form onSubmit={handleSavePlanetKey} className="space-y-3">
+                    <div className="relative">
+                      <input
+                        type={revealKey ? 'text' : 'password'}
+                        value={keyInput}
+                        onChange={(e) => setKeyInput(e.target.value)}
+                        required
+                        placeholder="Paste your Planet API key"
+                        className={`${INPUT} pr-10`}
+                        autoComplete="off"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setRevealKey((v) => !v)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        {revealKey ? (
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88" />
+                          </svg>
+                        ) : (
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                          </svg>
+                        )}
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      {keyEditMode && (
+                        <button
+                          type="button"
+                          onClick={() => { setKeyEditMode(false); setKeyInput(''); setRevealKey(false); }}
+                          className="flex-1 py-2.5 rounded-xl text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                      <button
+                        type="submit"
+                        disabled={!keyInput.trim() || keySaving}
+                        className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 transition-colors"
+                        style={{ backgroundColor: TEAL }}
+                      >
+                        {keySaving ? 'Saving…' : 'Save Key'}
                       </button>
                     </div>
                   </form>
-                )}
-
-                {apiKeys.length === 0 ? (
-                  <div className="flex flex-col items-center py-8 text-center">
-                    <div className="w-12 h-12 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: TEAL_LIGHT }}>
-                      <svg className="w-6 h-6" style={{ color: TEAL }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 0 1 21.75 8.25Z" />
-                      </svg>
-                    </div>
-                    <p className="text-sm font-medium text-gray-700">No API keys yet</p>
-                    <p className="text-xs text-gray-400 mt-1">Add a key to connect to Planet data services.</p>
-                  </div>
-                ) : (
-                  <div className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">
-                    {apiKeys.map((k) => (
-                      <div key={k.id} className="flex items-center justify-between px-4 py-3.5 hover:bg-gray-50 transition-colors">
-                        <div className="min-w-0 mr-4">
-                          <p className="text-sm font-medium text-gray-800 truncate">{k.description}</p>
-                          <p className="text-xs text-gray-400 font-mono mt-0.5">{maskKey(k.key)}</p>
-                        </div>
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <button onClick={() => copyKey(k)} title="Copy"
-                            className="p-2 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors">
-                            {copiedId === k.id ? (
-                              <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                              </svg>
-                            ) : (
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184" />
-                              </svg>
-                            )}
-                          </button>
-                          <button onClick={() => handleRemoveKey(k.id)} title="Delete"
-                            className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                ) : null}
               </div>
             </div>
           )}

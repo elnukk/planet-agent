@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import Image from 'next/image';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
-import type { Id } from 'convex/values';
+import type { Id } from '../../../../convex/_generated/dataModel';
 import planetLogo from '../../dashboard/planetlogo.png';
 import { type IntakeJSON } from '@/lib/workflowIntake';
 
@@ -92,10 +92,17 @@ function MarkdownCell({ source }: { source: string }) {
 }
 
 function CodeCell({
-  cell, showCode, ran, onRun,
+  cell, showCode, ran, onRun, hasApiKey, onMissingKey,
 }: {
-  cell: Cell; showCode: boolean; ran: boolean; onRun: (id: string) => void;
+  cell: Cell; showCode: boolean; ran: boolean;
+  onRun: (id: string) => void;
+  hasApiKey: boolean;
+  onMissingKey: () => void;
 }) {
+  function handleRun() {
+    if (!hasApiKey) { onMissingKey(); return; }
+    onRun(cell.id);
+  }
   return (
     <div className="rounded-xl overflow-hidden border border-gray-200">
       {showCode && (
@@ -103,7 +110,7 @@ function CodeCell({
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs text-gray-400 font-mono">Python</span>
             <button
-              onClick={() => onRun(cell.id)}
+              onClick={handleRun}
               className="text-xs text-white font-medium px-3 py-1 rounded-full transition-colors"
               style={{ backgroundColor: TEAL }}
             >
@@ -165,7 +172,14 @@ function IntakeSummaryCard({ intake }: { intake: IntakeJSON }) {
   );
 }
 
-function ChatPanel({ workflowId, intake, onClose }: { workflowId: string; intake: IntakeJSON | null; onClose: () => void }) {
+function ChatPanel({
+  workflowId, intake, planetApiKey, onClose,
+}: {
+  workflowId: string;
+  intake: IntakeJSON | null;
+  planetApiKey: string;
+  onClose: () => void;
+}) {
   const context = intake
     ? `Use case: ${intake.use_case}. Region: ${intake.region?.description}. Product: ${intake.planet_product}. Intent: ${intake.inferred_intent}.`
     : '';
@@ -198,7 +212,11 @@ function ChatPanel({ workflowId, intake, onClose }: { workflowId: string; intake
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, context }),
+        body: JSON.stringify({
+          message: text,
+          context,
+          hasApiKey: !!planetApiKey,
+        }),
       });
       const data = await res.json();
       const reply = data.reply || BOT_REPLIES[replyIdx % BOT_REPLIES.length];
@@ -281,12 +299,20 @@ function ChatPanel({ workflowId, intake, onClose }: { workflowId: string; intake
 
 export default function WorkflowPage() {
   const params = useParams();
+  const router = useRouter();
   const workflowId = params?.id as string;
 
   const workflowData = useQuery(
     api.workflows.getWorkflow,
     workflowId ? { id: workflowId as Id<'workflows'> } : 'skip',
   );
+
+  // Fetch the workflow owner's Planet API key
+  const userData = useQuery(
+    api.users.getUser,
+    workflowData?.userId ? { id: workflowData.userId } : 'skip',
+  );
+  const planetApiKey = userData?.apiKeyValue ?? '';
 
   const intake: IntakeJSON | null = workflowData
     ? {
@@ -301,12 +327,13 @@ export default function WorkflowPage() {
       }
     : null;
 
-  const workflowName = workflowData?.useCase ?? 'Workflow';
+  const workflowName = workflowData?.name ?? workflowData?.useCase ?? 'Workflow';
 
   const [showCode, setShowCode] = useState(true);
   const [ranCells, setRanCells] = useState<Set<string>>(new Set());
   const [runningAll, setRunningAll] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [showKeyBanner, setShowKeyBanner] = useState(false);
   const [assembleError, setAssembleError] = useState<string | null>(null);
   const [timedOut, setTimedOut] = useState(false);
   const assembleTriggered = useRef(false);
@@ -329,15 +356,12 @@ export default function WorkflowPage() {
       constraints: wd.constraints ?? [],
     };
 
-    // Route returns 200 immediately; assembly runs in the background on the server.
-    // Convex reactive query picks up notebookCells when the agent finishes.
     fetch('/api/assemble-workflow', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ intake: intakeForAgent, workflowId }),
     }).catch((e: unknown) => setAssembleError(String(e)));
 
-    // Safety timeout: if cells haven't arrived in 10 min, surface an error.
     timeoutRef.current = setTimeout(() => setTimedOut(true), 10 * 60 * 1000);
   }
 
@@ -364,11 +388,17 @@ export default function WorkflowPage() {
   const hasRealCells = convexCells.length > 0;
   const cells: Cell[] = hasRealCells ? fromConvexCells(convexCells) : [];
 
+  function handleMissingKey() {
+    setShowKeyBanner(true);
+  }
+
   function runCell(id: string) {
+    if (!planetApiKey) { handleMissingKey(); return; }
     setRanCells((prev) => new Set([...prev, id]));
   }
 
   async function runAll() {
+    if (!planetApiKey) { handleMissingKey(); return; }
     setRunningAll(true);
     const codeCells = cells.filter((c) => c.type === 'code');
     for (const cell of codeCells) {
@@ -422,6 +452,34 @@ export default function WorkflowPage() {
       </div>
 
       <main className="flex-1 max-w-4xl mx-auto w-full px-6 py-8 space-y-4 pb-28">
+
+        {/* Missing API key banner */}
+        {showKeyBanner && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-amber-800">Planet API key required to run cells</p>
+              <p className="text-xs text-amber-600 mt-1">
+                Add your Planet API key on the{' '}
+                <button
+                  onClick={() => router.push('/profile')}
+                  className="underline font-medium"
+                >
+                  profile page
+                </button>
+                {' '}to execute this workflow.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowKeyBanner(false)}
+              className="flex-shrink-0 text-amber-400 hover:text-amber-600 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
+
         <div className="bg-gray-100 rounded-2xl px-6 py-5">
           <h1 className="text-xl font-bold text-gray-900 mb-1">{workflowName}</h1>
           {intake ? (
@@ -483,6 +541,8 @@ export default function WorkflowPage() {
               showCode={showCode}
               ran={ranCells.has(cell.id)}
               onRun={runCell}
+              hasApiKey={!!planetApiKey}
+              onMissingKey={handleMissingKey}
             />
           )
         )}
@@ -506,7 +566,12 @@ export default function WorkflowPage() {
       </button>
 
       {chatOpen && workflowId && (
-        <ChatPanel workflowId={workflowId} intake={intake} onClose={() => setChatOpen(false)} />
+        <ChatPanel
+          workflowId={workflowId}
+          intake={intake}
+          planetApiKey={planetApiKey}
+          onClose={() => setChatOpen(false)}
+        />
       )}
     </div>
   );
