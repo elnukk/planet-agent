@@ -73,9 +73,9 @@ export const createUser = mutation({
   args: {
     name: v.string(),
     email: v.string(),
+    username: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    // check if user already exists
     const existing = await ctx.db
       .query("users")
       .withIndex("by_email", (q) => q.eq("email", args.email))
@@ -87,17 +87,14 @@ export const createUser = mutation({
 
     const userId = await ctx.db.insert("users", {
       createdAt: Date.now(),
-
       email: args.email,
       name: args.name,
-
+      username: args.username,
       externalId: undefined,
-
       passwordHash: undefined,
       phoneNumber: undefined,
       organizationName: undefined,
       roleInOrganization: undefined,
-
       apiKeyDescription: undefined,
       apiKeyValue: undefined,
     });

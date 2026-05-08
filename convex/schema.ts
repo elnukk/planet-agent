@@ -44,6 +44,7 @@ export default defineSchema({
 
     // identity
     email: v.string(),
+    username: v.optional(v.string()),
     externalId: v.optional(v.string()),
     name: v.string(),
 
@@ -152,6 +153,18 @@ export default defineSchema({
   })
     .index("by_userId", ["userId"])
     .index("by_createdAt", ["createdAt"]),
+
+  // ─────────────────────────────────────────────
+  // CONVERSATIONS (chat history per workflow)
+  // ─────────────────────────────────────────────
+  // ─────────────────────────────────────────────
+  // VERIFICATION CODES (short-lived email OTPs)
+  // ─────────────────────────────────────────────
+  verificationCodes: defineTable({
+    email: v.string(),
+    code: v.string(),
+    expiresAt: v.float64(),
+  }).index("by_email", ["email"]),
 
   // ─────────────────────────────────────────────
   // CONVERSATIONS (chat history per workflow)
