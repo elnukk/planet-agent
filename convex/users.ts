@@ -34,3 +34,95 @@
 // RESOURCES:
 // https://docs.convex.dev/functions/queries
 // https://docs.convex.dev/functions/mutations
+
+// ----------------
+
+// users.ts
+// PURPOSE: User CRUD operations for Convex
+// CONNECTS TO: schema.ts (users table)
+
+import { query, mutation } from "./_generated/server";
+import { v } from "convex/values";
+
+// ─────────────────────────────────────────────
+// QUERIES
+// ─────────────────────────────────────────────
+
+export const getUser = query({
+  args: { id: v.id("users") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.id);
+  },
+});
+
+export const getUserByEmail = query({
+  args: { email: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .unique();
+  },
+});
+
+// ─────────────────────────────────────────────
+// MUTATIONS
+// ─────────────────────────────────────────────
+
+export const createUser = mutation({
+  args: {
+    name: v.string(),
+    email: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // check if user already exists
+    const existing = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .unique();
+
+    if (existing) {
+      return existing._id;
+    }
+
+    const userId = await ctx.db.insert("users", {
+      createdAt: Date.now(),
+
+      email: args.email,
+      name: args.name,
+
+      externalId: undefined,
+
+      passwordHash: undefined,
+      phoneNumber: undefined,
+      organizationName: undefined,
+      roleInOrganization: undefined,
+
+      apiKeyDescription: undefined,
+      apiKeyValue: undefined,
+    });
+
+    return userId;
+  },
+});
+
+export const updateUser = mutation({
+  args: {
+    id: v.id("users"),
+    name: v.optional(v.string()),
+    phoneNumber: v.optional(v.string()),
+    organizationName: v.optional(v.string()),
+    roleInOrganization: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { id, ...updates } = args;
+
+    const user = await ctx.db.get(id);
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    await ctx.db.patch(id, updates);
+    return await ctx.db.get(id);
+  },
+});

@@ -3,20 +3,22 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import { useQuery, useMutation } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
+import type { Id } from 'convex/values';
 import {
   getCurrentUser,
-  getUserWorkflows,
-  softDeleteWorkflow,
-  getDeletedWorkflows,
-  restoreWorkflow,
-  permanentlyDeleteWorkflow,
-  purgeExpiredWorkflows,
+  setConvexUserId,
   type User,
-  type Workflow,
-  type DeletedWorkflow,
 } from '@/lib/auth';
 import { getWorkflowImage } from '@/lib/workflowImages';
 import planetLogo from './planetlogo.png';
+
+interface DisplayWorkflow {
+  id: string;
+  name: string;
+  updatedAt: string;
+}
 
 const GRADIENTS = [
   'linear-gradient(135deg, #FF7043 0%, #BF360C 100%)',
@@ -52,7 +54,7 @@ function WorkflowCard({
   onClick,
   onDelete,
 }: {
-  workflow: Workflow;
+  workflow: DisplayWorkflow;
   onClick: () => void;
   onDelete: () => void;
 }) {
@@ -111,96 +113,46 @@ function AddCard({ onClick }: { onClick: () => void }) {
   );
 }
 
-function DeletedCard({
-  workflow,
-  onRestore,
-  onDeleteForever,
-}: {
-  workflow: DeletedWorkflow;
-  onRestore: () => void;
-  onDeleteForever: () => void;
-}) {
-  const deletedDaysAgo = Math.floor((Date.now() - new Date(workflow.deletedAt).getTime()) / 86400000);
-  const daysLeft = Math.max(0, 30 - deletedDaysAgo);
-
-  return (
-    <div className="rounded-2xl overflow-hidden border border-gray-200 bg-white shadow-sm">
-      <div
-        className="w-full aspect-square flex items-end p-3 relative"
-        style={{ background: cardGradient(workflow.id) }}
-      >
-        <div className="absolute inset-0 bg-black/40" />
-        <span className="relative text-white/80 text-sm font-semibold leading-snug line-clamp-2">
-          {workflow.name}
-        </span>
-      </div>
-      <div className="px-3 py-3">
-        <p className="text-xs text-gray-400 mb-0.5">
-          Deleted {deletedDaysAgo === 0 ? 'today' : `${deletedDaysAgo}d ago`}
-        </p>
-        <p className="text-xs text-orange-400 mb-3">
-          {daysLeft === 0 ? 'Deletes today' : `${daysLeft} day${daysLeft !== 1 ? 's' : ''} until permanent deletion`}
-        </p>
-        <div className="flex gap-2">
-          <button
-            onClick={onRestore}
-            className="flex-1 py-1.5 rounded-lg text-xs font-medium border border-gray-200 hover:bg-gray-50 transition-colors text-gray-700"
-          >
-            Restore
-          </button>
-          <button
-            onClick={onDeleteForever}
-            className="flex-1 py-1.5 rounded-lg text-xs font-medium border border-red-100 text-red-500 hover:bg-red-50 transition-colors"
-          >
-            Delete Forever
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 type View = 'workflows' | 'trash';
 
 export default function DashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
-  const [workflows, setWorkflows] = useState<Workflow[]>([]);
-  const [deletedWorkflows, setDeletedWorkflows] = useState<DeletedWorkflow[]>([]);
   const [view, setView] = useState<View>('workflows');
   const [mounted, setMounted] = useState(false);
+
+  const createConvexUser = useMutation(api.users.createUser);
+  const deleteConvexWorkflow = useMutation(api.workflows.deleteWorkflow);
+
+  const convexWorkflows = useQuery(
+    api.workflows.getUserWorkflows,
+    user?.convexUserId ? { userId: user.convexUserId as Id<'users'> } : 'skip',
+  );
+
+  const workflows: DisplayWorkflow[] = (convexWorkflows ?? []).map((w) => ({
+    id: w._id as string,
+    name: w.useCase,
+    updatedAt: new Date(w.updatedAt).toISOString(),
+  }));
 
   useEffect(() => {
     setMounted(true);
     const current = getCurrentUser();
     if (!current) { router.replace('/'); return; }
     setUser(current);
-    purgeExpiredWorkflows();
-    setWorkflows(getUserWorkflows(current.id));
-    setDeletedWorkflows(getDeletedWorkflows(current.id));
   }, [router]);
 
-  function refreshWorkflows(userId: string) {
-    setWorkflows(getUserWorkflows(userId));
-    setDeletedWorkflows(getDeletedWorkflows(userId));
-  }
+  useEffect(() => {
+    if (!user || user.convexUserId) return;
+    createConvexUser({ name: user.name, email: user.email }).then((id) => {
+      setConvexUserId(user.id, id as string);
+      setUser(getCurrentUser());
+    });
+  }, [user, createConvexUser]);
 
-  function handleDelete(workflowId: string) {
-    if (!user) return;
-    softDeleteWorkflow(workflowId);
-    refreshWorkflows(user.id);
-  }
-
-  function handleRestore(workflowId: string) {
-    if (!user) return;
-    restoreWorkflow(workflowId);
-    refreshWorkflows(user.id);
-  }
-
-  function handleDeleteForever(workflowId: string) {
-    if (!user) return;
-    permanentlyDeleteWorkflow(workflowId);
-    refreshWorkflows(user.id);
+  async function handleDelete(workflowId: string) {
+    await deleteConvexWorkflow({ id: workflowId as Id<'workflows'> });
   }
 
   if (!mounted) {
@@ -263,11 +215,6 @@ export default function DashboardPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
                 </svg>
                 Recently Deleted
-                {deletedWorkflows.length > 0 && (
-                  <span className="ml-0.5 bg-gray-200 text-gray-600 text-xs font-semibold px-1.5 py-0.5 rounded-full">
-                    {deletedWorkflows.length}
-                  </span>
-                )}
               </>
             )}
           </button>
@@ -314,37 +261,17 @@ export default function DashboardPage() {
           </>
         )}
 
-        {/* Trash view */}
+        {/* Trash view — workflows are permanently deleted now */}
         {view === 'trash' && (
-          <>
-            {deletedWorkflows.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="w-20 h-20 rounded-2xl flex items-center justify-center mb-5 bg-gray-100">
-                  <svg className="w-10 h-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-                  </svg>
-                </div>
-                <h2 className="text-xl font-semibold text-gray-900 mb-2">Trash is empty</h2>
-                <p className="text-gray-400 text-sm">Deleted workflows will appear here for 30 days.</p>
-              </div>
-            ) : (
-              <>
-                <p className="text-sm text-gray-400 mb-5">
-                  Items are permanently deleted after 30 days.
-                </p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                  {deletedWorkflows.map((wf) => (
-                    <DeletedCard
-                      key={wf.id}
-                      workflow={wf}
-                      onRestore={() => handleRestore(wf.id)}
-                      onDeleteForever={() => handleDeleteForever(wf.id)}
-                    />
-                  ))}
-                </div>
-              </>
-            )}
-          </>
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="w-20 h-20 rounded-2xl flex items-center justify-center mb-5 bg-gray-100">
+              <svg className="w-10 h-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">Trash is empty</h2>
+            <p className="text-gray-400 text-sm">Deleted workflows are permanently removed.</p>
+          </div>
         )}
       </main>
 
