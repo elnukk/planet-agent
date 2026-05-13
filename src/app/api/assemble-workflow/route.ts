@@ -20,6 +20,8 @@ function cellSource(raw: string | string[]): string {
 }
 
 async function runAssembly(intake: unknown, workflowId: string): Promise<void> {
+  const id = workflowId as Id<'workflows'>;
+
   const pyRes = await fetch(`${PYTHON_API}/assemble`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -47,11 +49,8 @@ async function runAssembly(intake: unknown, workflowId: string): Promise<void> {
     content: s.content ?? '',
   }));
 
-  await convex.mutation(api.workflows.updateWorkflow, {
-    id: workflowId as Id<'workflows'>,
-    notebookCells,
-    sourceNotebooks,
-  });
+  await convex.mutation(api.workflows.updateWorkflow, { id, notebookCells, sourceNotebooks });
+  await convex.mutation(api.workflows.updateWorkflowStatus, { id, assemblyStatus: 'ready' });
 }
 
 export async function POST(req: NextRequest) {
@@ -62,12 +61,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'intake and workflowId required' }, { status: 400 });
   }
 
-  // Return immediately — assembly runs in the background.
-  // The workflow page loading state is driven by Convex's reactive notebookCells query,
-  // so it updates automatically when runAssembly writes to Convex.
-  runAssembly(intake, workflowId).catch((e) =>
-    console.error('[assemble-workflow] background error:', e),
-  );
+  const id = workflowId as Id<'workflows'>;
+
+  // Mark as pending immediately so the status persists across page refreshes
+  await convex.mutation(api.workflows.updateWorkflowStatus, {
+    id,
+    assemblyStatus: 'pending',
+  });
+
+  // Assembly runs in the background; status updates flow via Convex reactive query
+  runAssembly(intake, workflowId).catch(async (e: unknown) => {
+    const msg = e instanceof Error ? e.message : String(e);
+    await convex.mutation(api.workflows.updateWorkflowStatus, {
+      id,
+      assemblyStatus: 'error',
+      assemblyError: msg,
+    }).catch(() => {});
+  });
 
   return NextResponse.json({ ok: true, status: 'assembling' });
 }

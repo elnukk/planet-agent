@@ -312,7 +312,7 @@ export default function WorkflowPage() {
     api.users.getUser,
     workflowData?.userId ? { id: workflowData.userId } : 'skip',
   );
-  const planetApiKey = userData?.apiKeyValue ?? '';
+  const planetApiKey = userData?.apiKeys?.[0]?.value ?? userData?.apiKeyValue ?? '';
 
   const intake: IntakeJSON | null = workflowData
     ? {
@@ -334,16 +334,14 @@ export default function WorkflowPage() {
   const [runningAll, setRunningAll] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [showKeyBanner, setShowKeyBanner] = useState(false);
-  const [assembleError, setAssembleError] = useState<string | null>(null);
-  const [timedOut, setTimedOut] = useState(false);
-  const assembleTriggered = useRef(false);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fetchTriggered = useRef(false);
 
-  function triggerAssembly(wd: NonNullable<typeof workflowData>) {
-    if (assembleTriggered.current) return;
-    assembleTriggered.current = true;
-    setAssembleError(null);
-    setTimedOut(false);
+  const assemblyStatus = workflowData?.assemblyStatus;
+  const assemblyError = workflowData?.assemblyError ?? null;
+
+  async function triggerAssembly(wd: NonNullable<typeof workflowData>) {
+    if (fetchTriggered.current) return;
+    fetchTriggered.current = true;
 
     const intakeForAgent = {
       region: wd.region,
@@ -356,36 +354,30 @@ export default function WorkflowPage() {
       constraints: wd.constraints ?? [],
     };
 
-    fetch('/api/assemble-workflow', {
+    await fetch('/api/assemble-workflow', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ intake: intakeForAgent, workflowId }),
-    }).catch((e: unknown) => setAssembleError(String(e)));
-
-    timeoutRef.current = setTimeout(() => setTimedOut(true), 10 * 60 * 1000);
+    });
   }
 
   useEffect(() => {
     if (!workflowId || workflowData === undefined || workflowData === null) return;
-    if (workflowData.notebookCells.length > 0) {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      return;
+    // Only trigger if no status has been set yet (brand-new workflow)
+    if (!workflowData.assemblyStatus && workflowData.notebookCells.length === 0) {
+      triggerAssembly(workflowData);
     }
-    triggerAssembly(workflowData);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workflowData, workflowId]);
+  }, [workflowId, workflowData?.assemblyStatus]);
 
-  function retryAssembly() {
+  async function retryAssembly() {
     if (!workflowData) return;
-    assembleTriggered.current = false;
-    setTimedOut(false);
-    setAssembleError(null);
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    triggerAssembly(workflowData);
+    fetchTriggered.current = false;
+    await triggerAssembly(workflowData);
   }
 
   const convexCells = workflowData?.notebookCells ?? [];
-  const hasRealCells = convexCells.length > 0;
+  const hasRealCells = assemblyStatus === 'ready' && convexCells.length > 0;
   const cells: Cell[] = hasRealCells ? fromConvexCells(convexCells) : [];
 
   function handleMissingKey() {
@@ -447,7 +439,7 @@ export default function WorkflowPage() {
         <span className="text-xs text-gray-400 ml-auto">
           {hasRealCells
             ? `${ranCells.size}/${cells.filter((c) => c.type === 'code').length} cells run`
-            : assembleTriggered.current ? 'Building…' : '—'}
+            : assemblyStatus === 'pending' ? 'Building…' : '—'}
         </span>
       </div>
 
@@ -496,7 +488,7 @@ export default function WorkflowPage() {
           )}
         </div>
 
-        {!hasRealCells && workflowData !== undefined && workflowData !== null && !assembleError && !timedOut && (
+        {assemblyStatus === 'pending' && (
           <div className="rounded-xl border border-teal-100 bg-teal-50 px-5 py-4 flex items-center gap-4">
             <div
               className="w-5 h-5 rounded-full border-2 border-t-transparent flex-shrink-0 animate-spin"
@@ -505,20 +497,18 @@ export default function WorkflowPage() {
             <div>
               <p className="text-sm font-semibold text-teal-800">Building your workflow…</p>
               <p className="text-xs text-teal-600 mt-0.5">
-                The agent is searching notebooks and assembling analysis steps. This may take a few minutes — please do not close this tab.
+                The agent is searching notebooks and assembling analysis steps. This may take a few minutes — you can safely refresh this page.
               </p>
             </div>
           </div>
         )}
 
-        {(assembleError || timedOut) && !hasRealCells && (
+        {assemblyStatus === 'error' && (
           <div className="rounded-xl border border-red-100 bg-red-50 px-5 py-4 flex items-start justify-between gap-4">
             <div>
-              <p className="text-sm font-semibold text-red-700">
-                {timedOut ? 'Assembly is taking longer than expected' : 'Failed to reach the agent'}
-              </p>
+              <p className="text-sm font-semibold text-red-700">Assembly failed</p>
               <p className="text-xs text-red-500 mt-1 font-mono">
-                {assembleError ?? 'Make sure the Python server is running: python knowledge-base/api_server.py'}
+                {assemblyError ?? 'Make sure the Python server is running: python knowledge-base/api_server.py'}
               </p>
             </div>
             <button

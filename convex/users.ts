@@ -65,6 +65,17 @@ export const getUserByEmail = query({
   },
 });
 
+// Returns the user's saved API keys array. Use this in notebook execution
+// code to inject the correct Planet API key without exposing the full user doc.
+export const getUserApiKeys = query({
+  args: { id: v.id("users") },
+  handler: async (ctx, { id }) => {
+    const user = await ctx.db.get(id);
+    if (!user) return [];
+    return user.apiKeys ?? [];
+  },
+});
+
 // ─────────────────────────────────────────────
 // MUTATIONS
 // ─────────────────────────────────────────────
@@ -121,6 +132,36 @@ export const updateUser = mutation({
 
     await ctx.db.patch(id, updates);
     return await ctx.db.get(id);
+  },
+});
+
+export const addApiKey = mutation({
+  args: {
+    id: v.id("users"),
+    description: v.string(),
+    value: v.string(),
+  },
+  handler: async (ctx, { id, description, value }) => {
+    const user = await ctx.db.get(id);
+    if (!user) throw new Error("User not found");
+    const existing = user.apiKeys ?? [];
+    await ctx.db.patch(id, {
+      apiKeys: [
+        ...existing,
+        { id: crypto.randomUUID(), description, value, createdAt: Date.now() },
+      ],
+    });
+  },
+});
+
+export const deleteApiKey = mutation({
+  args: { id: v.id("users"), keyId: v.string() },
+  handler: async (ctx, { id, keyId }) => {
+    const user = await ctx.db.get(id);
+    if (!user) throw new Error("User not found");
+    await ctx.db.patch(id, {
+      apiKeys: (user.apiKeys ?? []).filter((k) => k.id !== keyId),
+    });
   },
 });
 

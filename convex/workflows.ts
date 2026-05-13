@@ -85,6 +85,21 @@ export const updateWorkflow = mutation({
   },
 });
 
+export const updateWorkflowStatus = mutation({
+  args: {
+    id: v.id("workflows"),
+    assemblyStatus: v.union(v.literal("pending"), v.literal("ready"), v.literal("error")),
+    assemblyError: v.optional(v.string()),
+  },
+  handler: async (ctx, { id, assemblyStatus, assemblyError }) => {
+    await ctx.db.patch(id, {
+      assemblyStatus,
+      assemblyError: assemblyError ?? undefined,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
 export const deleteWorkflow = mutation({
   args: { id: v.id("workflows") },
   handler: async (ctx, { id }) => {

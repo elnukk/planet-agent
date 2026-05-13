@@ -57,7 +57,14 @@ export default defineSchema({
     organizationName: v.optional(v.string()),
     roleInOrganization: v.optional(v.string()),
 
-    // API keys (IMPORTANT: store hashed or encrypted in real apps)
+    // API keys — array of named keys
+    apiKeys: v.optional(v.array(v.object({
+      id: v.string(),
+      description: v.string(),
+      value: v.string(),
+      createdAt: v.float64(),
+    }))),
+    // legacy single-key fields (kept for existing rows)
     apiKeyDescription: v.optional(v.string()),
     apiKeyValue: v.optional(v.string()),
   })
@@ -129,6 +136,14 @@ export default defineSchema({
         answer: v.string(),
       })
     ),
+
+    // ─── Assembly status ───
+    assemblyStatus: v.optional(v.union(
+      v.literal("pending"),
+      v.literal("ready"),
+      v.literal("error"),
+    )),
+    assemblyError: v.optional(v.string()),
 
     // ─── Notebook assembly output ───
     notebookCells: v.array(
