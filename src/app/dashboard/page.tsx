@@ -5,10 +5,20 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
-import type { Doc, Id } from '../../../convex/_generated/dataModel';
-import { getCurrentUser } from '@/lib/auth';
+import type { Id } from '../../../convex/_generated/dataModel';
+import {
+  getCurrentUser,
+  setConvexUserId,
+  type User,
+} from '@/lib/auth';
 import { getWorkflowImage } from '@/lib/workflowImages';
 import planetLogo from './planetlogo.png';
+
+interface DisplayWorkflow {
+  id: string;
+  name: string;
+  updatedAt: number;
+}
 
 const GRADIENTS = [
   'linear-gradient(135deg, #FF7043 0%, #BF360C 100%)',
@@ -42,18 +52,16 @@ function WorkflowCard({
   onClick,
   onDelete,
 }: {
-  workflow: Doc<'workflows'>;
+  workflow: DisplayWorkflow;
   onClick: () => void;
   onDelete: () => void;
 }) {
   const [imgUrl, setImgUrl] = useState<string | null>(null);
-  const id = workflow._id.toString();
+  const id = workflow.id;
 
   useEffect(() => {
     setImgUrl(getWorkflowImage(id));
   }, [id]);
-
-  const displayName = workflow.userDescription ?? workflow.useCase;
 
   return (
     <div className="group relative rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-200">
@@ -65,7 +73,7 @@ function WorkflowCard({
             : { background: cardGradient(id) }}
         >
           <span className="text-white text-sm font-semibold leading-snug drop-shadow-md line-clamp-2">
-            {displayName}
+            {workflow.name}
           </span>
         </div>
         <div className="px-1 pt-1.5 pb-2">
@@ -103,44 +111,46 @@ function AddCard({ onClick }: { onClick: () => void }) {
   );
 }
 
+type View = 'workflows' | 'trash';
+
 export default function DashboardPage() {
   const router = useRouter();
-  const [sessionEmail, setSessionEmail] = useState<string | null>(null);
-  const [sessionChecked, setSessionChecked] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [view, setView] = useState<View>('workflows');
+
+  const createConvexUser = useMutation(api.users.createUser);
+  const deleteConvexWorkflow = useMutation(api.workflows.deleteWorkflow);
+
+  const convexWorkflows = useQuery(
+    api.workflows.getUserWorkflows,
+    user?.convexUserId ? { userId: user.convexUserId as Id<'users'> } : 'skip',
+  );
+
+  const workflows: DisplayWorkflow[] = (convexWorkflows ?? []).map((w) => ({
+    id: w._id as string,
+    name: w.userDescription ?? w.useCase,
+    updatedAt: w.updatedAt,
+  }));
 
   useEffect(() => {
     const current = getCurrentUser();
-    if (!current) {
-      router.replace('/');
-      return;
-    }
-    setSessionEmail(current.email);
-    setSessionChecked(true);
+    if (!current) { router.replace('/'); return; }
+    setUser(current);
   }, [router]);
 
-  const convexUser = useQuery(
-    api.users.getUserByEmail,
-    sessionChecked && sessionEmail ? { email: sessionEmail } : 'skip'
-  );
-
-  const workflows = useQuery(
-    api.workflows.getUserWorkflows,
-    convexUser?._id ? { userId: convexUser._id } : 'skip'
-  );
-
-  const deleteWorkflow = useMutation(api.workflows.deleteWorkflow);
-
   useEffect(() => {
-    if (sessionChecked && convexUser === null) {
-      router.replace('/');
-    }
-  }, [sessionChecked, convexUser, router]);
+    if (!user || user.convexUserId) return;
+    createConvexUser({ name: user.name, email: user.email }).then((id) => {
+      setConvexUserId(user.id, id as string);
+      setUser(getCurrentUser());
+    });
+  }, [user, createConvexUser]);
 
-  async function handleDelete(id: Id<'workflows'>) {
-    await deleteWorkflow({ id });
+  async function handleDelete(workflowId: string) {
+    await deleteConvexWorkflow({ id: workflowId as Id<'workflows'> });
   }
 
-  if (!sessionChecked || convexUser === undefined || workflows === undefined) {
+  if (!user) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin" />
@@ -148,9 +158,7 @@ export default function DashboardPage() {
     );
   }
 
-  if (!convexUser) return null;
-
-  const firstName = convexUser.name?.split(' ')[0] ?? '';
+  const firstName = user.name.split(' ')[0];
 
   return (
     <div className="min-h-screen bg-white">
@@ -182,41 +190,79 @@ export default function DashboardPage() {
           <h1 className="text-3xl font-bold text-gray-900">
             {firstName ? `Hello ${firstName}!` : 'Hello!'}
           </h1>
+          <button
+            onClick={() => setView(view === 'workflows' ? 'trash' : 'workflows')}
+            className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-700 transition-colors"
+          >
+            {view === 'trash' ? (
+              <>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
+                </svg>
+                Back to Workflows
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                </svg>
+                Recently Deleted
+              </>
+            )}
+          </button>
         </div>
 
-        {workflows.length === 0 ? (
+        {/* Workflows view */}
+        {view === 'workflows' && (
+          <>
+            {workflows.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <div className="w-20 h-20 rounded-2xl flex items-center justify-center mb-5 bg-cyan-50">
+                  <svg className="w-10 h-10 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m6.75 12H9m1.5-12H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                  </svg>
+                </div>
+                <h2 className="text-xl font-semibold text-gray-900 mb-2">Start your first workflow</h2>
+                <p className="text-gray-400 text-sm max-w-xs mb-8 leading-relaxed">
+                  Create a satellite intelligence workflow to analyze geospatial data for your project.
+                </p>
+                <button
+                  onClick={() => router.push('/intake')}
+                  className="flex items-center gap-2 px-6 py-3 rounded-full text-white text-sm font-semibold hover:opacity-90 transition-opacity"
+                  style={{ backgroundColor: '#26C6DA' }}
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                  New Workflow
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                <AddCard onClick={() => router.push('/intake')} />
+                {workflows.map((wf) => (
+                  <WorkflowCard
+                    key={wf.id}
+                    workflow={wf}
+                    onClick={() => router.push(`/workflow/${wf.id}`)}
+                    onDelete={() => handleDelete(wf.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Trash view — workflows are permanently deleted now */}
+        {view === 'trash' && (
           <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="w-20 h-20 rounded-2xl flex items-center justify-center mb-5 bg-cyan-50">
-              <svg className="w-10 h-10 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m6.75 12H9m1.5-12H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+            <div className="w-20 h-20 rounded-2xl flex items-center justify-center mb-5 bg-gray-100">
+              <svg className="w-10 h-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
               </svg>
             </div>
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Start your first workflow</h2>
-            <p className="text-gray-400 text-sm max-w-xs mb-8 leading-relaxed">
-              Create a satellite intelligence workflow to analyze geospatial data for your project.
-            </p>
-            <button
-              onClick={() => router.push('/intake')}
-              className="flex items-center gap-2 px-6 py-3 rounded-full text-white text-sm font-semibold hover:opacity-90 transition-opacity"
-              style={{ backgroundColor: '#26C6DA' }}
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-              </svg>
-              New Workflow
-            </button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-            <AddCard onClick={() => router.push('/intake')} />
-            {workflows.map((wf) => (
-              <WorkflowCard
-                key={wf._id}
-                workflow={wf}
-                onClick={() => router.push(`/workflow/${wf._id}`)}
-                onDelete={() => handleDelete(wf._id)}
-              />
-            ))}
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">Trash is empty</h2>
+            <p className="text-gray-400 text-sm">Deleted workflows are permanently removed.</p>
           </div>
         )}
       </main>

@@ -3,9 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { useMutation } from 'convex/react';
+import { useMutation, useConvex } from 'convex/react';
 import { api } from '../../convex/_generated/api';
-import { signIn, createAccount, getCurrentUser, resetPassword } from '@/lib/auth';
+import { signIn, createAccount, getCurrentUser, resetPassword, setConvexUserId } from '@/lib/auth';
 
 import loginBg from './dashboard/loginbackground.png';
 import planetLogo from './dashboard/planetlogo.png';
@@ -137,6 +137,7 @@ const INPUT = 'w-full px-4 py-3 border border-gray-200 rounded-full text-sm plac
 // ─── Main auth page ───────────────────────────────────────────────────────────
 export default function AuthPage() {
   const router = useRouter();
+  const convex = useConvex();
   const createUser = useMutation(api.users.createUser);
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<Mode>('login');
@@ -190,6 +191,15 @@ export default function AuthPage() {
       if (mode === 'login') {
         const user = signIn(email, password);
         if (!user) { setError('Incorrect email or password.'); return; }
+        if (!user.convexUserId) {
+          const convexUser = await convex.query(api.users.getUserByEmail, { email: email.toLowerCase().trim() });
+          if (convexUser) {
+            setConvexUserId(user.id, convexUser._id as string);
+          } else {
+            const convexId = await createUser({ name: user.name, email: email.toLowerCase().trim() });
+            setConvexUserId(user.id, convexId as string);
+          }
+        }
         router.push('/dashboard');
       } else {
         if (!name.trim()) { setError('Please enter your full name.'); return; }
@@ -207,7 +217,16 @@ export default function AuthPage() {
           apiKeys,
         });
         if (result === 'exists') { setError('An account with this email already exists.'); return; }
-        await createUser({ name: name.trim(), email: email.toLowerCase().trim() });
+        const convexId = await createUser({
+          name: name.trim(),
+          email: email.toLowerCase().trim(),
+          phoneNumber: phone.trim() || undefined,
+          organizationName: organization.trim() || undefined,
+          roleInOrganization: orgRole.trim() || undefined,
+          apiKeyDescription: (showApiKey && apiKeyDesc.trim()) ? apiKeyDesc.trim() : undefined,
+          apiKeyValue: (showApiKey && apiKeyValue.trim()) ? apiKeyValue.trim() : undefined,
+        });
+        setConvexUserId(result.id, convexId as string);
         router.push('/dashboard');
       }
     } finally {

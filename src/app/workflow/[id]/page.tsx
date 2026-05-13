@@ -3,10 +3,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Image from 'next/image';
+import { useQuery, useMutation } from 'convex/react';
+import { api } from '../../../../convex/_generated/api';
+import type { Id } from 'convex/values';
 import planetLogo from '../../dashboard/planetlogo.png';
-import { getWorkflowIntake, type IntakeJSON } from '@/lib/workflowIntake';
-import { getUserWorkflows } from '@/lib/auth';
-import { getCurrentUser } from '@/lib/auth';
+import { type IntakeJSON } from '@/lib/workflowIntake';
 
 const TEAL = '#009DA5';
 
@@ -19,103 +20,14 @@ interface Cell {
   output?: string;
 }
 
-function buildCells(intake: IntakeJSON | null): Cell[] {
-  if (!intake) return PLACEHOLDER_CELLS;
-
-  const regionDesc = intake.region?.description || 'the specified region';
-  const dateStart = intake.date_range?.start || '—';
-  const dateEnd = intake.date_range?.end || '—';
-  const product = intake.planet_product || 'Planet imagery';
-  const useCase = intake.use_case || 'satellite data analysis';
-
-  return [
-    {
-      id: 'md-intro',
-      type: 'markdown',
-      source: `## ${intake.use_case ? intake.use_case.charAt(0).toUpperCase() + intake.use_case.slice(1) : 'Satellite Analysis'} Workflow\n\n${intake.inferred_intent || `This workflow analyzes ${product} imagery for ${useCase} in ${regionDesc}.`}${intake.constraints?.length ? `\n\n**Constraints:** ${intake.constraints.join(' · ')}` : ''}`,
-    },
-    {
-      id: 'code-auth',
-      type: 'code',
-      source: `import planet
-import numpy as np
-import matplotlib.pyplot as plt
-
-# Initialize authenticated Planet client
-client = planet.Session()
-print("Planet SDK initialized successfully.")`,
-      output: 'Planet SDK initialized successfully.',
-    },
-    {
-      id: 'code-aoi',
-      type: 'code',
-      source: `# Area of interest: ${regionDesc}
-aoi_description = "${regionDesc}"
-
-# Date range from intake
-start_date = "${dateStart}"
-end_date   = "${dateEnd}"
-product    = "${product}"
-
-print(f"Region  : {aoi_description}")
-print(f"Period  : {start_date} → {end_date}")
-print(f"Product : {product}")`,
-      output: `Region  : ${regionDesc}\nPeriod  : ${dateStart} → ${dateEnd}\nProduct : ${product}`,
-    },
-    {
-      id: 'code-search',
-      type: 'code',
-      source: `# Search for available ${product} imagery
-search_filter = planet.filters.and_filter(
-    planet.filters.date_range("acquired",
-        gte=start_date, lte=end_date),
-    planet.filters.geom_filter(aoi)
-)
-
-results = client.quick_search(
-    item_types=["PSScene"],
-    filter=search_filter
-)
-print(f"Found {{len(results)}} scenes across the period")`,
-      output: 'Found scenes — run to query live results',
-    },
-    {
-      id: 'md-analysis',
-      type: 'markdown',
-      source: `### Analysis\n\nThe next cells perform the core ${useCase} analysis over ${regionDesc} using ${product} data from ${dateStart} to ${dateEnd}.`,
-    },
-    {
-      id: 'code-analysis',
-      type: 'code',
-      source: `# Core analysis: ${useCase}
-# TODO: implement analysis logic based on your intake parameters
-# Constraints to consider: ${intake.constraints?.join(', ') || 'none specified'}
-
-print("Ready to run analysis.")`,
-      output: 'Ready to run analysis.',
-    },
-  ];
-}
-
-const PLACEHOLDER_CELLS: Cell[] = [
-  {
-    id: 'md-1',
-    type: 'markdown',
-    source: `## Satellite Analysis Workflow\n\nThis workflow was created without intake data. Complete the intake form to generate a personalized workflow.`,
-  },
-  {
-    id: 'code-1',
-    type: 'code',
-    source: `import planet
-client = planet.Session()
-print("Planet SDK initialized successfully.")`,
-    output: 'Planet SDK initialized successfully.',
-  },
-];
-
-interface Message {
-  role: 'user' | 'bot';
-  text: string;
+function fromConvexCells(
+  convexCells: Array<{ cellType: string; source: string }>,
+): Cell[] {
+  return convexCells.map((c, i) => ({
+    id: `cell-${i}`,
+    type: c.cellType === 'code' ? 'code' : 'markdown',
+    source: c.source,
+  }));
 }
 
 const BOT_REPLIES = [
@@ -125,6 +37,13 @@ const BOT_REPLIES = [
   'Happy to add a cloud-masking step — cloud cover is a common source of false positives.',
   'The constraints from your intake have been factored into the workflow structure.',
 ];
+
+interface ConvexMessage {
+  _id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: number;
+}
 
 function NavBar() {
   const router = useRouter();
@@ -246,19 +165,18 @@ function IntakeSummaryCard({ intake }: { intake: IntakeJSON }) {
   );
 }
 
-function ChatPanel({ intake, onClose }: { intake: IntakeJSON | null; onClose: () => void }) {
+function ChatPanel({ workflowId, intake, onClose }: { workflowId: string; intake: IntakeJSON | null; onClose: () => void }) {
   const context = intake
     ? `Use case: ${intake.use_case}. Region: ${intake.region?.description}. Product: ${intake.planet_product}. Intent: ${intake.inferred_intent}.`
     : '';
 
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: 'bot',
-      text: intake
-        ? `Hi! I'm the Project Centinela assistant. I can see your workflow is for ${intake.use_case || 'satellite analysis'} in ${intake.region?.description || 'your region'}. How can I help?`
-        : "Hi! I'm the Project Centinela workflow assistant. Ask me anything about this analysis.",
-    },
-  ]);
+  const convexMessages = useQuery(
+    api.conversations.getConversation,
+    { workflowId: workflowId as Id<'workflows'> },
+  ) as ConvexMessage[] | undefined;
+
+  const sendMessage = useMutation(api.conversations.sendMessage);
+
   const [input, setInput] = useState('');
   const [replyIdx, setReplyIdx] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -266,25 +184,15 @@ function ChatPanel({ intake, onClose }: { intake: IntakeJSON | null; onClose: ()
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [convexMessages]);
 
   async function send() {
     const text = input.trim();
     if (!text) return;
-    setMessages((m) => [...m, { role: 'user', text }]);
     setInput('');
     setLoading(true);
 
-    const apiKey = (window as Window & { __GEMINI_KEY__?: string }).__GEMINI_KEY__;
-    if (!apiKey) {
-      // fallback to canned replies if no key in window
-      setTimeout(() => {
-        setMessages((m) => [...m, { role: 'bot', text: BOT_REPLIES[replyIdx % BOT_REPLIES.length] }]);
-        setReplyIdx((i) => i + 1);
-        setLoading(false);
-      }, 700);
-      return;
-    }
+    await sendMessage({ workflowId: workflowId as Id<'workflows'>, role: 'user', content: text });
 
     try {
       const res = await fetch('/api/chat', {
@@ -293,15 +201,22 @@ function ChatPanel({ intake, onClose }: { intake: IntakeJSON | null; onClose: ()
         body: JSON.stringify({ message: text, context }),
       });
       const data = await res.json();
-      setMessages((m) => [...m, { role: 'bot', text: data.reply || BOT_REPLIES[replyIdx % BOT_REPLIES.length] }]);
+      const reply = data.reply || BOT_REPLIES[replyIdx % BOT_REPLIES.length];
+      await sendMessage({ workflowId: workflowId as Id<'workflows'>, role: 'assistant', content: reply });
       setReplyIdx((i) => i + 1);
     } catch {
-      setMessages((m) => [...m, { role: 'bot', text: BOT_REPLIES[replyIdx % BOT_REPLIES.length] }]);
+      const reply = BOT_REPLIES[replyIdx % BOT_REPLIES.length];
+      await sendMessage({ workflowId: workflowId as Id<'workflows'>, role: 'assistant', content: reply });
       setReplyIdx((i) => i + 1);
     } finally {
       setLoading(false);
     }
   }
+
+  const displayMessages = convexMessages ?? [];
+  const welcomeText = intake
+    ? `Hi! I'm the Project Centinela assistant. I can see your workflow is for ${intake.use_case || 'satellite analysis'} in ${intake.region?.description || 'your region'}. How can I help?`
+    : "Hi! I'm the Project Centinela workflow assistant. Ask me anything about this analysis.";
 
   return (
     <div className="fixed bottom-20 right-4 w-80 bg-white border border-gray-200 rounded-2xl shadow-2xl flex flex-col z-30 overflow-hidden">
@@ -314,15 +229,22 @@ function ChatPanel({ intake, onClose }: { intake: IntakeJSON | null; onClose: ()
         </button>
       </div>
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 max-h-72">
-        {messages.map((msg, i) => (
-          <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+        {displayMessages.length === 0 && (
+          <div className="flex justify-start">
+            <div className="bg-gray-100 text-gray-800 text-sm px-3 py-2 rounded-2xl rounded-bl-sm max-w-[85%] leading-snug">
+              {welcomeText}
+            </div>
+          </div>
+        )}
+        {displayMessages.map((msg) => (
+          <div key={msg._id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div
               className={`text-sm px-3 py-2 rounded-2xl max-w-[85%] leading-snug ${
                 msg.role === 'user' ? 'text-white rounded-br-sm' : 'bg-gray-100 text-gray-800 rounded-bl-sm'
               }`}
               style={msg.role === 'user' ? { backgroundColor: TEAL } : {}}
             >
-              {msg.text}
+              {msg.content}
             </div>
           </div>
         ))}
@@ -361,28 +283,86 @@ export default function WorkflowPage() {
   const params = useParams();
   const workflowId = params?.id as string;
 
-  const [intake, setIntake] = useState<IntakeJSON | null>(null);
-  const [workflowName, setWorkflowName] = useState('Workflow');
+  const workflowData = useQuery(
+    api.workflows.getWorkflow,
+    workflowId ? { id: workflowId as Id<'workflows'> } : 'skip',
+  );
+
+  const intake: IntakeJSON | null = workflowData
+    ? {
+        region: workflowData.region as IntakeJSON['region'],
+        date_range: workflowData.dateRange,
+        temporal_resolution: workflowData.temporalResolution ?? '',
+        planet_product: workflowData.planetProduct,
+        use_case: workflowData.useCase,
+        user_description: workflowData.userDescription ?? '',
+        inferred_intent: workflowData.inferredIntent ?? '',
+        constraints: workflowData.constraints ?? [],
+      }
+    : null;
+
+  const workflowName = workflowData?.useCase ?? 'Workflow';
+
   const [showCode, setShowCode] = useState(true);
   const [ranCells, setRanCells] = useState<Set<string>>(new Set());
   const [runningAll, setRunningAll] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const [assembleError, setAssembleError] = useState<string | null>(null);
+  const [timedOut, setTimedOut] = useState(false);
+  const assembleTriggered = useRef(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function triggerAssembly(wd: NonNullable<typeof workflowData>) {
+    if (assembleTriggered.current) return;
+    assembleTriggered.current = true;
+    setAssembleError(null);
+    setTimedOut(false);
+
+    const intakeForAgent = {
+      region: wd.region,
+      date_range: wd.dateRange,
+      temporal_resolution: wd.temporalResolution ?? 'unknown',
+      planet_product: wd.planetProduct,
+      use_case: wd.useCase,
+      user_description: wd.userDescription ?? '',
+      inferred_intent: wd.inferredIntent ?? '',
+      constraints: wd.constraints ?? [],
+    };
+
+    // Route returns 200 immediately; assembly runs in the background on the server.
+    // Convex reactive query picks up notebookCells when the agent finishes.
+    fetch('/api/assemble-workflow', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ intake: intakeForAgent, workflowId }),
+    }).catch((e: unknown) => setAssembleError(String(e)));
+
+    // Safety timeout: if cells haven't arrived in 10 min, surface an error.
+    timeoutRef.current = setTimeout(() => setTimedOut(true), 10 * 60 * 1000);
+  }
 
   useEffect(() => {
-    setMounted(true);
-    if (!workflowId) return;
-    const stored = getWorkflowIntake(workflowId);
-    setIntake(stored);
-
-    const user = getCurrentUser();
-    if (user) {
-      const wf = getUserWorkflows(user.id).find((w) => w.id === workflowId);
-      if (wf) setWorkflowName(wf.name);
+    if (!workflowId || workflowData === undefined || workflowData === null) return;
+    if (workflowData.notebookCells.length > 0) {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      return;
     }
-  }, [workflowId]);
+    triggerAssembly(workflowData);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workflowData, workflowId]);
 
-  const cells = mounted ? buildCells(intake) : PLACEHOLDER_CELLS;
+  function retryAssembly() {
+    if (!workflowData) return;
+    assembleTriggered.current = false;
+    setTimedOut(false);
+    setAssembleError(null);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    triggerAssembly(workflowData);
+  }
+
+  const convexCells = workflowData?.notebookCells ?? [];
+  const hasRealCells = convexCells.length > 0;
+  const cells: Cell[] = hasRealCells ? fromConvexCells(convexCells) : [];
 
   function runCell(id: string) {
     setRanCells((prev) => new Set([...prev, id]));
@@ -405,7 +385,7 @@ export default function WorkflowPage() {
       <div className="border-b border-gray-200 bg-white px-6 py-3 flex items-center gap-3 sticky top-20 z-10">
         <button
           onClick={runAll}
-          disabled={runningAll}
+          disabled={runningAll || !hasRealCells}
           className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold text-white disabled:opacity-60 transition-all"
           style={{ backgroundColor: TEAL }}
         >
@@ -435,7 +415,9 @@ export default function WorkflowPage() {
         </button>
 
         <span className="text-xs text-gray-400 ml-auto">
-          {ranCells.size}/{cells.filter((c) => c.type === 'code').length} cells run
+          {hasRealCells
+            ? `${ranCells.size}/${cells.filter((c) => c.type === 'code').length} cells run`
+            : assembleTriggered.current ? 'Building…' : '—'}
         </span>
       </div>
 
@@ -456,7 +438,42 @@ export default function WorkflowPage() {
           )}
         </div>
 
-        {cells.map((cell) =>
+        {!hasRealCells && workflowData !== undefined && workflowData !== null && !assembleError && !timedOut && (
+          <div className="rounded-xl border border-teal-100 bg-teal-50 px-5 py-4 flex items-center gap-4">
+            <div
+              className="w-5 h-5 rounded-full border-2 border-t-transparent flex-shrink-0 animate-spin"
+              style={{ borderColor: `${TEAL} ${TEAL} ${TEAL} transparent` }}
+            />
+            <div>
+              <p className="text-sm font-semibold text-teal-800">Building your workflow…</p>
+              <p className="text-xs text-teal-600 mt-0.5">
+                The agent is searching notebooks and assembling analysis steps. This may take a few minutes — please do not close this tab.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {(assembleError || timedOut) && !hasRealCells && (
+          <div className="rounded-xl border border-red-100 bg-red-50 px-5 py-4 flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-red-700">
+                {timedOut ? 'Assembly is taking longer than expected' : 'Failed to reach the agent'}
+              </p>
+              <p className="text-xs text-red-500 mt-1 font-mono">
+                {assembleError ?? 'Make sure the Python server is running: python knowledge-base/api_server.py'}
+              </p>
+            </div>
+            <button
+              onClick={retryAssembly}
+              className="flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors"
+              style={{ borderColor: TEAL, color: TEAL }}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {hasRealCells && cells.map((cell) =>
           cell.type === 'markdown' ? (
             <MarkdownCell key={cell.id} source={cell.source} />
           ) : (
@@ -488,7 +505,9 @@ export default function WorkflowPage() {
         )}
       </button>
 
-      {chatOpen && <ChatPanel intake={intake} onClose={() => setChatOpen(false)} />}
+      {chatOpen && workflowId && (
+        <ChatPanel workflowId={workflowId} intake={intake} onClose={() => setChatOpen(false)} />
+      )}
     </div>
   );
 }

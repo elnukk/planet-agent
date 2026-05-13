@@ -73,6 +73,11 @@ export const createUser = mutation({
   args: {
     name: v.string(),
     email: v.string(),
+    phoneNumber: v.optional(v.string()),
+    organizationName: v.optional(v.string()),
+    roleInOrganization: v.optional(v.string()),
+    apiKeyDescription: v.optional(v.string()),
+    apiKeyValue: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     // check if user already exists
@@ -94,12 +99,12 @@ export const createUser = mutation({
       externalId: undefined,
 
       passwordHash: undefined,
-      phoneNumber: undefined,
-      organizationName: undefined,
-      roleInOrganization: undefined,
+      phoneNumber: args.phoneNumber,
+      organizationName: args.organizationName,
+      roleInOrganization: args.roleInOrganization,
 
-      apiKeyDescription: undefined,
-      apiKeyValue: undefined,
+      apiKeyDescription: args.apiKeyDescription,
+      apiKeyValue: args.apiKeyValue,
     });
 
     return userId;

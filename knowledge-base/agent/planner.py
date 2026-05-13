@@ -9,6 +9,7 @@ import os
 import re
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 import anthropic
 from dotenv import load_dotenv
@@ -29,6 +30,7 @@ if not api_key:
 
 client = anthropic.Anthropic(api_key=api_key)
 MODEL = "claude-sonnet-4-6"
+HAIKU_MODEL = "claude-haiku-4-5-20251001"
 
 
 def _sanitize_json_strings(s: str) -> str:
@@ -68,12 +70,12 @@ def _parse_json(raw: str) -> dict:
         return json.loads(_sanitize_json_strings(raw))
 
 
-def _call_llm(prompt: str, max_retries: int = 5) -> str:
+def _call_llm(prompt: str, max_retries: int = 5, model: str = MODEL) -> str:
     delay = 30
     for attempt in range(max_retries):
         try:
             response = client.messages.create(
-                model=MODEL,
+                model=model,
                 max_tokens=4096,
                 messages=[{"role": "user", "content": prompt}],
             )
@@ -233,7 +235,7 @@ Prefer cells that use only the available bands listed above.
 - Be selective — the coder will use this material directly to generate code.
 - Respond with valid JSON only — no markdown fences, no explanation."""
 
-    return _parse_json(_call_llm(prompt))
+    return _parse_json(_call_llm(prompt, model=HAIKU_MODEL))
 
 
 # ─── Main pipeline ────────────────────────────────────────────────────────────
@@ -264,19 +266,25 @@ def plan_workflow(intake: dict) -> dict:
     steps = result.get("steps", [])
     print(f"[planner] {len(steps)} steps generated")
 
-    # Phase 3 + 4: Per-step retrieval and selection
-    enriched_steps = []
-    for step in steps:
+    # Phase 3 + 4: Per-step retrieval and selection — run all steps in parallel.
+    # Each step is independent: notebook search + docs fetch + Haiku selection.
+    product = intake.get("planet_product", "")
+
+    def _process_step(step: dict) -> dict:
         query = step.get("retrieval_query") or step.get("title", "")
         tools = step.get("tools_needed", ["notebook_search", "web_search"])
         print(f"[planner] Step {step['step_id']}: {tools} → {query!r}")
 
         cells = search_notebooks(query) if "notebook_search" in tools else []
-        docs = _safe_docs_search(query) if "web_search" in tools else {"content": "", "source_url": "", "section": ""}
+        docs = (
+            _safe_docs_search(query)
+            if "web_search" in tools
+            else {"content": "", "source_url": "", "section": ""}
+        )
 
-        selected = select_best_material(step, cells, docs, product=intake.get("planet_product", ""))
+        selected = select_best_material(step, cells, docs, product=product)
 
-        enriched_steps.append({
+        return {
             **step,
             "selected_cells": selected.get("selected_cells", []),
             "selected_docs": selected.get("selected_docs", {}),
@@ -291,7 +299,18 @@ def plan_workflow(intake: dict) -> dict:
                     else []
                 ),
             },
-        })
+        }
+
+    enriched_by_id: dict[int, dict] = {}
+    with ThreadPoolExecutor(max_workers=min(len(steps), 8)) as executor:
+        futures = {executor.submit(_process_step, step): step["step_id"] for step in steps}
+        for future in as_completed(futures):
+            result = future.result()
+            enriched_by_id[result["step_id"]] = result
+            print(f"[planner] Step {result['step_id']} done")
+
+    # Restore original step order
+    enriched_steps = [enriched_by_id[step["step_id"]] for step in steps]
 
     return {
         "workflow_title": workflow_title,
