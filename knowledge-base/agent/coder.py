@@ -54,11 +54,36 @@ def _sanitize_json_strings(s: str) -> str:
     return ''.join(result)
 
 
+def _fix_truncated_json(s: str) -> str:
+    """Close any open strings/arrays/objects left by a truncated LLM response."""
+    depth = []
+    in_string = False
+    i = 0
+    while i < len(s):
+        c = s[i]
+        if c == '\\' and in_string:
+            i += 2
+            continue
+        if c == '"':
+            in_string = not in_string
+        elif not in_string:
+            if c in '{[':
+                depth.append('}' if c == '{' else ']')
+            elif c in '}]' and depth:
+                depth.pop()
+        i += 1
+    suffix = ('"' if in_string else '') + ''.join(reversed(depth))
+    return s + suffix
+
+
 def _parse_json(raw: str) -> dict:
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        return json.loads(_sanitize_json_strings(raw))
+    for transform in (lambda s: s, _sanitize_json_strings, _fix_truncated_json,
+                      lambda s: _fix_truncated_json(_sanitize_json_strings(s))):
+        try:
+            return json.loads(transform(raw))
+        except json.JSONDecodeError:
+            pass
+    raise json.JSONDecodeError("Could not parse LLM JSON after all recovery attempts", raw, 0)
 
 
 def _call_llm(prompt: str, max_retries: int = 5) -> str:
@@ -67,7 +92,7 @@ def _call_llm(prompt: str, max_retries: int = 5) -> str:
         try:
             response = client.messages.create(
                 model=MODEL,
-                max_tokens=8192,
+                max_tokens=16384,
                 messages=[{"role": "user", "content": prompt}],
             )
             raw = response.content[0].text.strip()
