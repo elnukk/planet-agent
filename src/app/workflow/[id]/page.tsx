@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import Image from 'next/image';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
-import type { Id } from 'convex/values';
+import type { Id } from '../../../../convex/_generated/dataModel';
 import planetLogo from '../../dashboard/planetlogo.png';
 import { type IntakeJSON } from '@/lib/workflowIntake';
 
@@ -18,6 +18,50 @@ interface Cell {
   type: CellType;
   source: string;
   output?: string;
+}
+
+function buildIpynb(cells: Array<{ cellType: string; source: string }>) {
+  return {
+    nbformat: 4,
+    nbformat_minor: 5,
+    metadata: {
+      kernelspec: { display_name: 'Python 3', language: 'python', name: 'python3' },
+      language_info: { name: 'python', version: '3.10.0' },
+    },
+    cells: cells.map((cell) => {
+      const lines = cell.source.split('\n');
+      const source = lines.map((line, i) => (i < lines.length - 1 ? line + '\n' : line));
+      if (cell.cellType === 'code') {
+        return { cell_type: 'code', execution_count: null, metadata: {}, outputs: [], source };
+      }
+      return { cell_type: 'markdown', metadata: {}, source };
+    }),
+  };
+}
+
+function downloadNotebook(cells: Array<{ cellType: string; source: string }>, name: string) {
+  const json = JSON.stringify(buildIpynb(cells), null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${name.replace(/\s+/g, '_').toLowerCase()}.ipynb`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function openInColab(cells: Array<{ cellType: string; source: string }>, name: string) {
+  const res = await fetch('/api/create-gist', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cells, name }),
+  });
+  if (!res.ok) {
+    alert('Failed to create Gist. Make sure GITHUB_TOKEN is set in .env.local.');
+    return;
+  }
+  const { url } = await res.json() as { url: string };
+  window.open(url, '_blank');
 }
 
 function fromConvexCells(
@@ -413,6 +457,31 @@ export default function WorkflowPage() {
           </svg>
           {showCode ? 'Hide Code' : 'View Code'}
         </button>
+
+        {hasRealCells && (
+          <>
+            <button
+              onClick={() => downloadNotebook(convexCells, workflowName)}
+              className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold border transition-colors"
+              style={{ borderColor: TEAL, color: TEAL }}
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              Download .ipynb
+            </button>
+            <button
+              onClick={() => openInColab(convexCells, workflowName)}
+              className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold border transition-colors"
+              style={{ borderColor: '#F9AB00', color: '#F9AB00' }}
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/>
+              </svg>
+              Open in Colab
+            </button>
+          </>
+        )}
 
         <span className="text-xs text-gray-400 ml-auto">
           {hasRealCells
