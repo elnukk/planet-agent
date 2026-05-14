@@ -29,7 +29,7 @@ class AssembleRequest(BaseModel):
 def assemble(req: AssembleRequest):
     try:
         plan = plan_workflow(req.intake)
-        cells = assemble_notebook(plan)
+        result = assemble_notebook(plan)
 
         seen: set[tuple[str, int]] = set()
         source_notebooks = []
@@ -44,7 +44,7 @@ def assemble(req: AssembleRequest):
                         "content": "",
                     })
 
-        return {"cells": cells, "sourceNotebooks": source_notebooks}
+        return {"cells": result["cells"], "packages": result["packages"], "sourceNotebooks": source_notebooks}
     except Exception as e:
         print(f"[api_server] Assembly error: {e}")
         raise HTTPException(status_code=500, detail=str(e))

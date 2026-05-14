@@ -172,6 +172,7 @@ explaining what you changed. Do not wrap code in backticks.
 Return a JSON object with exactly this structure:
 {{
   "imports": "<all deduplicated import statements as a single string, newline-separated>",
+  "packages": ["<pip-installable package name>", ...],
   "cells": [
     {{
       "step_id": <integer>,
@@ -185,6 +186,8 @@ Rules:
 - One entry in "cells" per step_id. If a step has multiple source cells, merge their code.
 - If a step has no source cells, emit a stub: `# TODO: implement {{step title}}`.
 - Preserve the step_id order.
+- "packages" must list the pip package name for every import (e.g. `import cv2` → `opencv-python`, \
+`import PIL` → `Pillow`, `import sklearn` → `scikit-learn`). Omit stdlib modules.
 - Respond with valid JSON only — no markdown fences, no explanation."""
 
     return _parse_json(_call_llm(prompt))
@@ -243,13 +246,13 @@ def _build_notebook_cells(plan: dict, assembled: dict) -> list[dict]:
 
 # ─── Main entry point ─────────────────────────────────────────────────────────
 
-def assemble_notebook(plan: dict) -> list[dict]:
+def assemble_notebook(plan: dict) -> dict:
     """
     Full coder pipeline:
       1. Collect — flatten selected_cells from all steps
       2. Assemble — LLM deduplicates imports, normalizes variables, injects placeholders
       3. Wrap — build final nbformat-compatible cell list
-    Returns list of notebook cells ready for Convex.
+    Returns {"cells": [...], "packages": [...]} ready for Convex.
     """
     print("[coder] Collecting cells from enriched plan...")
     cells, intake = _collect_cells(plan)
@@ -261,7 +264,8 @@ def assemble_notebook(plan: dict) -> list[dict]:
 
     print("[coder] Building notebook cell list...")
     notebook_cells = _build_notebook_cells(plan, assembled)
-    print(f"[coder] Done — {len(notebook_cells)} total cells")
+    packages = assembled.get("packages", [])
+    print(f"[coder] Done — {len(notebook_cells)} total cells, {len(packages)} packages")
 
     print("\n" + "=" * 60)
     print("ASSEMBLED NOTEBOOK")
@@ -274,8 +278,9 @@ def assemble_notebook(plan: dict) -> list[dict]:
             label = f"Step {step_id}" if step_id is not None else "imports"
             print(f"\n[code — {label}]\n{cell['source']}")
     print("\n" + "=" * 60 + "\n")
+    print(f"[coder] Required packages: {packages}\n")
 
-    return notebook_cells
+    return {"cells": notebook_cells, "packages": packages}
 
 
 if __name__ == "__main__":
@@ -301,7 +306,9 @@ if __name__ == "__main__":
     plan = plan_workflow(sample_intake)
 
     print("\nAssembling notebook...")
-    notebook_cells = assemble_notebook(plan)
+    result = assemble_notebook(plan)
 
     print("\n=== Assembled Notebook Cells ===")
-    print(json.dumps(notebook_cells, indent=2))
+    print(json.dumps(result["cells"], indent=2))
+    print("\n=== Required Packages ===")
+    print(json.dumps(result["packages"], indent=2))

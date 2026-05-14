@@ -59,11 +59,11 @@ def plan_workflow_tool(intake_json: str) -> dict[str, Any]:
     return plan_workflow(intake)
 
 
-def code_notebook_tool(enriched_plan_json: str) -> list[dict[str, Any]]:
+def code_notebook_tool(enriched_plan_json: str) -> dict[str, Any]:
     """Assemble a runnable Jupyter notebook from an enriched plan produced by plan_workflow_tool.
     Deduplicates imports, normalizes variable names across steps, injects AOI/date/product
-    placeholders from the intake, and returns an ordered list of nbformat-compatible cells
-    ready to save to Convex."""
+    placeholders from the intake, and returns {"cells": [...], "packages": [...]} where cells
+    are nbformat-compatible and packages are pip-installable package names."""
     from agent.coder import assemble_notebook
 
     plan = json.loads(enriched_plan_json) if isinstance(enriched_plan_json, str) else enriched_plan_json
