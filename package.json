@@ -13,7 +13,7 @@
     "@tailwindcss/postcss": "^4.2.4",
     "anthropic": "^0.0.0",
     "convex": "^1.37.0",
-    "next": "^16.2.4",
+    "next": "^16.2.6",
     "react": "^18",
     "react-dom": "^18"
   },
