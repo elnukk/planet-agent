@@ -146,6 +146,9 @@ export default defineSchema({
         content: v.string(),
       })
     ),
+
+    // pip-installable packages required by this workflow
+    packages: v.optional(v.array(v.string())),
   })
     .index("by_userId", ["userId"])
     .index("by_createdAt", ["createdAt"]),

@@ -95,6 +95,7 @@ export const createWorkflow = mutation({
       cellIndex: v.number(),
       content: v.string(),
     })),
+    packages: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -118,13 +119,13 @@ export const updateWorkflow = mutation({
       cellIndex: v.number(),
       content: v.string(),
     }))),
+    packages: v.optional(v.array(v.string())),
   },
-  handler: async (ctx, { id, notebookCells, sourceNotebooks }) => {
-    if (sourceNotebooks !== undefined) {
-      await ctx.db.patch(id, { notebookCells, sourceNotebooks, updatedAt: Date.now() });
-    } else {
-      await ctx.db.patch(id, { notebookCells, updatedAt: Date.now() });
-    }
+  handler: async (ctx, { id, notebookCells, sourceNotebooks, packages }) => {
+    const patch: Record<string, unknown> = { notebookCells, updatedAt: Date.now() };
+    if (sourceNotebooks !== undefined) patch.sourceNotebooks = sourceNotebooks;
+    if (packages !== undefined) patch.packages = packages;
+    await ctx.db.patch(id, patch);
   },
 });
 

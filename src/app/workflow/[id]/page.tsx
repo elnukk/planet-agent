@@ -406,18 +406,35 @@ export default function WorkflowPage() {
 
   const convexCells = workflowData?.notebookCells ?? [];
   const hasRealCells = convexCells.length > 0;
-  const cells: Cell[] = hasRealCells ? fromConvexCells(convexCells) : [];
+  const [cellOutputs, setCellOutputs] = useState<Record<string, string>>({});
+  const cells: Cell[] = hasRealCells
+    ? fromConvexCells(convexCells).map((c) => ({ ...c, output: cellOutputs[c.id] }))
+    : [];
+  const packages = workflowData?.packages ?? [];
 
-  function runCell(id: string) {
+  async function runCell(id: string) {
+    const cell = cells.find((c) => c.id === id);
+    if (!cell || cell.type !== 'code') return;
     setRanCells((prev) => new Set([...prev, id]));
+    try {
+      const res = await fetch('/api/run-cell', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: cell.source, packages }),
+      });
+      const data = await res.json() as { stdout?: string; stderr?: string; error?: string };
+      const output = data.stdout || data.stderr || data.error || '';
+      setCellOutputs((prev) => ({ ...prev, [id]: output }));
+    } catch (e: unknown) {
+      setCellOutputs((prev) => ({ ...prev, [id]: String(e) }));
+    }
   }
 
   async function runAll() {
     setRunningAll(true);
     const codeCells = cells.filter((c) => c.type === 'code');
     for (const cell of codeCells) {
-      await new Promise((r) => setTimeout(r, 400));
-      setRanCells((prev) => new Set([...prev, cell.id]));
+      await runCell(cell.id);
     }
     setRunningAll(false);
   }

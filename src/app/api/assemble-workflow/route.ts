@@ -33,6 +33,7 @@ async function runAssembly(intake: unknown, workflowId: string): Promise<void> {
 
   const pyData = (await pyRes.json()) as {
     cells: RawCell[];
+    packages: string[];
     sourceNotebooks: SourceNotebook[];
   };
 
@@ -51,6 +52,7 @@ async function runAssembly(intake: unknown, workflowId: string): Promise<void> {
     id: workflowId as Id<'workflows'>,
     notebookCells,
     sourceNotebooks,
+    packages: pyData.packages ?? [],
   });
 }
 
