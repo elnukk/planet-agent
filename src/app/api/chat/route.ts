@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ConvexHttpClient } from 'convex/browser';
-import { api } from '../../../../../convex/_generated/api';
-import type { Id } from '../../../../../convex/_generated/dataModel';
+import { api } from '../../../../convex/_generated/api';
+import type { Id } from '../../../../convex/_generated/dataModel';
 import Anthropic from '@anthropic-ai/sdk';
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
@@ -68,6 +68,26 @@ export async function POST(req: NextRequest) {
         { status: 404 },
       );
     }
+
+    const intakeJson = {
+      region: workflow.region,
+      date_range: workflow.dateRange,
+      temporal_resolution: workflow.temporalResolution ?? 'unknown',
+      planet_product: workflow.planetProduct,
+      use_case: workflow.useCase,
+      user_description: workflow.userDescription ?? '',
+      inferred_intent: workflow.inferredIntent ?? '',
+      constraints: workflow.constraints ?? [],
+    };
+
+    const notebookSource = workflow.notebookCells.length > 0
+      ? workflow.notebookCells
+          .map((cell: { cellType: string; source: string }, i: number) => {
+            const fence = cell.cellType === 'code' ? '```python' : '```markdown';
+            return `### Cell ${i + 1} (${cell.cellType})\n${fence}\n${cell.source}\n\`\`\``;
+          })
+          .join('\n\n')
+      : '(No notebook cells assembled yet)';
 
     const conversation = await convex.query(api.conversations.getConversation, {
       workflowId: workflowId as Id<'workflows'>,

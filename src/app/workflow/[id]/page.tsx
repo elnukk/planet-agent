@@ -210,10 +210,6 @@ function IntakeSummaryCard({ intake }: { intake: IntakeJSON }) {
 }
 
 function ChatPanel({ workflowId, intake, onClose }: { workflowId: string; intake: IntakeJSON | null; onClose: () => void }) {
-  const context = intake
-    ? `Use case: ${intake.use_case}. Region: ${intake.region?.description}. Product: ${intake.planet_product}. Intent: ${intake.inferred_intent}.`
-    : '';
-
   const convexMessages = useQuery(
     api.conversations.getConversation,
     { workflowId: workflowId as Id<'workflows'> },
@@ -242,7 +238,7 @@ function ChatPanel({ workflowId, intake, onClose }: { workflowId: string; intake
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, context }),
+        body: JSON.stringify({ workflowId, message: text }),
       });
       const data = await res.json();
       const reply = data.reply || BOT_REPLIES[replyIdx % BOT_REPLIES.length];
