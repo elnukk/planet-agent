@@ -217,7 +217,15 @@ export default function AuthPage() {
           apiKeys,
         });
         if (result === 'exists') { setError('An account with this email already exists.'); return; }
-        const convexId = await createUser({ name: name.trim(), email: email.toLowerCase().trim() });
+        const convexId = await createUser({
+          name: name.trim(),
+          email: email.toLowerCase().trim(),
+          phoneNumber: phone.trim() || undefined,
+          organizationName: organization.trim() || undefined,
+          roleInOrganization: orgRole.trim() || undefined,
+          apiKeyDescription: (showApiKey && apiKeyDesc.trim()) ? apiKeyDesc.trim() : undefined,
+          apiKeyValue: (showApiKey && apiKeyValue.trim()) ? apiKeyValue.trim() : undefined,
+        });
         setConvexUserId(result.id, convexId as string);
         router.push('/dashboard');
       }

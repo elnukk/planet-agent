@@ -8,14 +8,23 @@
       "Bash(curl -s -X POST http://localhost:3000/api/intake-questions -H 'Content-Type: application/json' -d '{\"useCase\":\"crop health\",\"region\":\"Nile Delta\",\"dateRange\":\"2024-01-01 to 2025-01-01\",\"planetProduct\":\"PlanetScope\"}')",
       "Bash(curl -s -X POST http://localhost:3000/api/intake-questions -H 'Content-Type: application/json' -d '{\"useCase\":\"crop health monitoring\",\"region\":\"Nile Delta\",\"dateRange\":\"2024-01-01 to 2025-01-01\",\"planetProduct\":\"PlanetScope\"}')",
       "Bash(python3 -c \"import json; d=json.load\\(open\\('/Users/elanukarakus/cs52/knowledge-base/data/notebooks_metadata.json'\\)\\); print\\(f'{len\\(d\\)} notebooks indexed'\\)\")",
+<<<<<<< HEAD
+      "Bash(cd /home/sulegl32/planetProject/chatbot/planet-agent 2>/dev/null || find /home -name \"planet-agent\" -type d 2>/dev/null | head -1)",
+      "Read(///wsl.localhost/Ubuntu//**)"
+=======
       "Bash(python3 -c \"import fastapi\")",
       "Bash(python3 -c \"import uvicorn\")",
+<<<<<<< HEAD
       "Bash(python3 *)",
       "Bash(npx convex *)",
       "Bash(ls /home/sulegl32/)",
       "Read(///wsl.localhost/Ubuntu/home/**)",
       "Bash(git -C /mnt/wsl/instances/Ubuntu/home/sulegl32/planetProject/chatbot/planet-agent diff main...HEAD --name-only)",
       "Bash(wsl -e bash -c \"cd ~/planetProject/chatbot/planet-agent && git diff main...HEAD --name-only\")"
+=======
+      "Bash(python3 *)"
+>>>>>>> 40b1ec1d564251b60a39b9f723d72bb76f0e0316
+>>>>>>> 088f87ab407fb752e4efa7b2b78039f06d412167
     ]
   }
 }

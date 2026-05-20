@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
-import type { Id } from 'convex/values';
+import type { Id } from '../../../convex/_generated/dataModel';
 import {
   getCurrentUser,
   setConvexUserId,
@@ -17,7 +17,7 @@ import planetLogo from './planetlogo.png';
 interface DisplayWorkflow {
   id: string;
   name: string;
-  updatedAt: string;
+  updatedAt: number;
 }
 
 const GRADIENTS = [
@@ -39,15 +39,13 @@ function cardGradient(id: string): string {
   return GRADIENTS[Math.abs(h) % GRADIENTS.length];
 }
 
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+function formatDate(ts: number): string {
+  const days = Math.floor((Date.now() - ts) / 86400000);
   if (days === 0) return 'Today';
   if (days === 1) return 'Yesterday';
   if (days < 7) return `${days} days ago`;
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
-
 
 function WorkflowCard({
   workflow,
@@ -59,10 +57,11 @@ function WorkflowCard({
   onDelete: () => void;
 }) {
   const [imgUrl, setImgUrl] = useState<string | null>(null);
+  const id = workflow.id;
 
   useEffect(() => {
-    setImgUrl(getWorkflowImage(workflow.id));
-  }, [workflow.id]);
+    setImgUrl(getWorkflowImage(id));
+  }, [id]);
 
   return (
     <div className="group relative rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-200">
@@ -71,7 +70,7 @@ function WorkflowCard({
           className="w-full aspect-square flex items-end p-3"
           style={imgUrl
             ? { backgroundImage: `url(${imgUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-            : { background: cardGradient(workflow.id) }}
+            : { background: cardGradient(id) }}
         >
           <span className="text-white text-sm font-semibold leading-snug drop-shadow-md line-clamp-2">
             {workflow.name}
@@ -82,10 +81,9 @@ function WorkflowCard({
         </div>
       </button>
 
-      {/* Delete button shown on hover */}
       <button
         onClick={(e) => { e.stopPropagation(); onDelete(); }}
-        title="Move to trash"
+        title="Delete workflow"
         className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
       >
         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -113,14 +111,12 @@ function AddCard({ onClick }: { onClick: () => void }) {
   );
 }
 
-
 type View = 'workflows' | 'trash';
 
 export default function DashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [view, setView] = useState<View>('workflows');
-  const [mounted, setMounted] = useState(false);
 
   const createConvexUser = useMutation(api.users.createUser);
   const deleteConvexWorkflow = useMutation(api.workflows.deleteWorkflow);
@@ -132,12 +128,11 @@ export default function DashboardPage() {
 
   const workflows: DisplayWorkflow[] = (convexWorkflows ?? []).map((w) => ({
     id: w._id as string,
-    name: w.useCase,
-    updatedAt: new Date(w.updatedAt).toISOString(),
+    name: w.userDescription ?? w.useCase,
+    updatedAt: w.updatedAt,
   }));
 
   useEffect(() => {
-    setMounted(true);
     const current = getCurrentUser();
     if (!current) { router.replace('/'); return; }
     setUser(current);
@@ -155,7 +150,7 @@ export default function DashboardPage() {
     await deleteConvexWorkflow({ id: workflowId as Id<'workflows'> });
   }
 
-  if (!mounted) {
+  if (!user) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin" />
@@ -163,7 +158,7 @@ export default function DashboardPage() {
     );
   }
 
-  const firstName = user?.name?.split(' ')[0] ?? '';
+  const firstName = user.name.split(' ')[0];
 
   return (
     <div className="min-h-screen bg-white">
@@ -191,12 +186,9 @@ export default function DashboardPage() {
       {/* Main content */}
       <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
 
-        {/* Section header */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">
-            {view === 'workflows'
-              ? (firstName ? `Hello ${firstName}!` : 'Hello!')
-              : 'Recently Deleted'}
+            {firstName ? `Hello ${firstName}!` : 'Hello!'}
           </h1>
           <button
             onClick={() => setView(view === 'workflows' ? 'trash' : 'workflows')}
