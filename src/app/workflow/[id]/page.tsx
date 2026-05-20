@@ -66,6 +66,50 @@ async function openInColab(cells: Array<{ cellType: string; source: string }>, n
   window.open(url, '_blank');
 }
 
+function buildIpynb(cells: Array<{ cellType: string; source: string }>) {
+  return {
+    nbformat: 4,
+    nbformat_minor: 5,
+    metadata: {
+      kernelspec: { display_name: 'Python 3', language: 'python', name: 'python3' },
+      language_info: { name: 'python', version: '3.10.0' },
+    },
+    cells: cells.map((cell) => {
+      const lines = cell.source.split('\n');
+      const source = lines.map((line, i) => (i < lines.length - 1 ? line + '\n' : line));
+      if (cell.cellType === 'code') {
+        return { cell_type: 'code', execution_count: null, metadata: {}, outputs: [], source };
+      }
+      return { cell_type: 'markdown', metadata: {}, source };
+    }),
+  };
+}
+
+function downloadNotebook(cells: Array<{ cellType: string; source: string }>, name: string) {
+  const json = JSON.stringify(buildIpynb(cells), null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${name.replace(/\s+/g, '_').toLowerCase()}.ipynb`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function openInColab(cells: Array<{ cellType: string; source: string }>, name: string) {
+  const res = await fetch('/api/create-gist', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cells, name }),
+  });
+  if (!res.ok) {
+    alert('Failed to create Gist. Make sure GITHUB_TOKEN is set in .env.local.');
+    return;
+  }
+  const { url } = await res.json() as { url: string };
+  window.open(url, '_blank');
+}
+
 function fromConvexCells(
   convexCells: Array<{ cellType: string; source: string }>,
 ): Cell[] {
@@ -76,13 +120,6 @@ function fromConvexCells(
   }));
 }
 
-const BOT_REPLIES = [
-  'I can help you refine the analysis parameters. What would you like to adjust?',
-  'Based on your intake, I can suggest additional preprocessing steps. Would you like me to add them?',
-  'You can narrow the AOI or extend the date range. Would you like me to regenerate the workflow cells?',
-  'Happy to add a cloud-masking step — cloud cover is a common source of false positives.',
-  'The constraints from your intake have been factored into the workflow structure.',
-];
 
 interface ConvexMessage {
   _id: string;
@@ -212,11 +249,7 @@ function IntakeSummaryCard({ intake }: { intake: IntakeJSON }) {
   );
 }
 
-function ChatPanel({ workflowId, intake, onClose }: { workflowId: string; intake: IntakeJSON | null; onClose: () => void }) {
-  const context = intake
-    ? `Use case: ${intake.use_case}. Region: ${intake.region?.description}. Product: ${intake.planet_product}. Intent: ${intake.inferred_intent}.`
-    : '';
-
+function ChatPanel({ workflowId, intake, notebookCells, onClose }: { workflowId: string; intake: IntakeJSON | null; notebookCells: Array<{ cellType: string; source: string }>; onClose: () => void }) {
   const convexMessages = useQuery(
     api.conversations.getConversation,
     { workflowId: workflowId as Id<'workflows'> },
@@ -225,7 +258,6 @@ function ChatPanel({ workflowId, intake, onClose }: { workflowId: string; intake
   const sendMessage = useMutation(api.conversations.sendMessage);
 
   const [input, setInput] = useState('');
-  const [replyIdx, setReplyIdx] = useState(0);
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -245,16 +277,13 @@ function ChatPanel({ workflowId, intake, onClose }: { workflowId: string; intake
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, context }),
+        body: JSON.stringify({ workflowId, message: text, notebookCells }),
       });
-      const data = await res.json();
-      const reply = data.reply || BOT_REPLIES[replyIdx % BOT_REPLIES.length];
+      const data = await res.json() as { reply?: string; error?: string };
+      const reply = data.reply || data.error || 'Something went wrong. Please try again.';
       await sendMessage({ workflowId: workflowId as Id<'workflows'>, role: 'assistant', content: reply });
-      setReplyIdx((i) => i + 1);
     } catch {
-      const reply = BOT_REPLIES[replyIdx % BOT_REPLIES.length];
-      await sendMessage({ workflowId: workflowId as Id<'workflows'>, role: 'assistant', content: reply });
-      setReplyIdx((i) => i + 1);
+      await sendMessage({ workflowId: workflowId as Id<'workflows'>, role: 'assistant', content: 'Network error — could not reach the assistant.' });
     } finally {
       setLoading(false);
     }
@@ -621,7 +650,7 @@ export default function WorkflowPage() {
       </button>
 
       {chatOpen && workflowId && (
-        <ChatPanel workflowId={workflowId} intake={intake} onClose={() => setChatOpen(false)} />
+        <ChatPanel workflowId={workflowId} intake={intake} notebookCells={convexCells} onClose={() => setChatOpen(false)} />
       )}
     </div>
   );
