@@ -74,13 +74,6 @@ function fromConvexCells(
   }));
 }
 
-const BOT_REPLIES = [
-  'I can help you refine the analysis parameters. What would you like to adjust?',
-  'Based on your intake, I can suggest additional preprocessing steps. Would you like me to add them?',
-  'You can narrow the AOI or extend the date range. Would you like me to regenerate the workflow cells?',
-  'Happy to add a cloud-masking step — cloud cover is a common source of false positives.',
-  'The constraints from your intake have been factored into the workflow structure.',
-];
 
 interface ConvexMessage {
   _id: string;
@@ -209,11 +202,7 @@ function IntakeSummaryCard({ intake }: { intake: IntakeJSON }) {
   );
 }
 
-function ChatPanel({ workflowId, intake, onClose }: { workflowId: string; intake: IntakeJSON | null; onClose: () => void }) {
-  const context = intake
-    ? `Use case: ${intake.use_case}. Region: ${intake.region?.description}. Product: ${intake.planet_product}. Intent: ${intake.inferred_intent}.`
-    : '';
-
+function ChatPanel({ workflowId, intake, notebookCells, onClose }: { workflowId: string; intake: IntakeJSON | null; notebookCells: Array<{ cellType: string; source: string }>; onClose: () => void }) {
   const convexMessages = useQuery(
     api.conversations.getConversation,
     { workflowId: workflowId as Id<'workflows'> },
@@ -222,7 +211,6 @@ function ChatPanel({ workflowId, intake, onClose }: { workflowId: string; intake
   const sendMessage = useMutation(api.conversations.sendMessage);
 
   const [input, setInput] = useState('');
-  const [replyIdx, setReplyIdx] = useState(0);
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -242,16 +230,13 @@ function ChatPanel({ workflowId, intake, onClose }: { workflowId: string; intake
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, context }),
+        body: JSON.stringify({ workflowId, message: text, notebookCells }),
       });
-      const data = await res.json();
-      const reply = data.reply || BOT_REPLIES[replyIdx % BOT_REPLIES.length];
+      const data = await res.json() as { reply?: string; error?: string };
+      const reply = data.reply || data.error || 'Something went wrong. Please try again.';
       await sendMessage({ workflowId: workflowId as Id<'workflows'>, role: 'assistant', content: reply });
-      setReplyIdx((i) => i + 1);
     } catch {
-      const reply = BOT_REPLIES[replyIdx % BOT_REPLIES.length];
-      await sendMessage({ workflowId: workflowId as Id<'workflows'>, role: 'assistant', content: reply });
-      setReplyIdx((i) => i + 1);
+      await sendMessage({ workflowId: workflowId as Id<'workflows'>, role: 'assistant', content: 'Network error — could not reach the assistant.' });
     } finally {
       setLoading(false);
     }
@@ -592,7 +577,7 @@ export default function WorkflowPage() {
       </button>
 
       {chatOpen && workflowId && (
-        <ChatPanel workflowId={workflowId} intake={intake} onClose={() => setChatOpen(false)} />
+        <ChatPanel workflowId={workflowId} intake={intake} notebookCells={convexCells} onClose={() => setChatOpen(false)} />
       )}
     </div>
   );
