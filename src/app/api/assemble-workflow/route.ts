@@ -31,8 +31,10 @@ async function runAssembly(intake: unknown, workflowId: string): Promise<void> {
     throw new Error(`Agent returned ${pyRes.status}: ${detail}`);
   }
 
+  // 1. Added "packages: string[]" to the Python response type definition
   const pyData = (await pyRes.json()) as {
     cells: RawCell[];
+    packages: string[]; // <-- Added this
     sourceNotebooks: SourceNotebook[];
   };
 
@@ -47,10 +49,12 @@ async function runAssembly(intake: unknown, workflowId: string): Promise<void> {
     content: s.content ?? '',
   }));
 
+  // 2. Added "packages" into the Convex mutation payload
   await convex.mutation(api.workflows.updateWorkflow, {
     id: workflowId as Id<'workflows'>,
     notebookCells,
     sourceNotebooks,
+    packages: pyData.packages ?? [], // <-- Added this
   });
 }
 

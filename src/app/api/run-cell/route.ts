@@ -34,9 +34,11 @@ export async function POST(req: NextRequest) {
        * 2. Execute User Code
        * We use JSON.stringify to safely escape the code string for the shell.
        */
-      const result = await sandbox.commands.run(
-        `python3 -c ${JSON.stringify(code)}`
-      );
+      // Write the code string cleanly to a file inside the sandbox
+      await sandbox.files.write('exec_cell.py', code);
+
+      // Run the script file safely
+      const result = await sandbox.commands.run('python3 exec_cell.py');
 
       return NextResponse.json({
         stdout: result.stdout,

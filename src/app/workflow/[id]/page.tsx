@@ -18,6 +18,8 @@ interface Cell {
   type: CellType;
   source: string;
   output?: string;
+  stderr?: string;
+  isRunning?: boolean;
 }
 
 function buildIpynb(cells: Array<{ cellType: string; source: string }>) {
@@ -148,10 +150,11 @@ function CodeCell({
             <span className="text-xs text-gray-400 font-mono">Python</span>
             <button
               onClick={() => onRun(cell.id)}
-              className="text-xs text-white font-medium px-3 py-1 rounded-full transition-colors"
+              disabled={cell.isRunning}
+              className="text-xs text-white font-medium px-3 py-1 rounded-full transition-colors disabled:opacity-50"
               style={{ backgroundColor: TEAL }}
             >
-              ▶ Run
+              {cell.isRunning ? 'Running…' : '▶ Run'}
             </button>
           </div>
           <pre className="text-sm font-mono text-gray-100 leading-relaxed overflow-x-auto whitespace-pre-wrap">
@@ -165,10 +168,10 @@ function CodeCell({
           <pre className="text-sm font-mono text-gray-800 whitespace-pre-wrap">{cell.output}</pre>
         </div>
       )}
-      {!showCode && ran && cell.output && (
-        <div className="bg-gray-50 px-4 py-3">
-          <span className="text-xs text-gray-400 font-mono block mb-1">Output:</span>
-          <pre className="text-sm font-mono text-gray-800 whitespace-pre-wrap">{cell.output}</pre>
+      {ran && cell.stderr && (
+        <div className="bg-red-50 border-t border-red-200 px-4 py-3">
+          <span className="text-xs text-red-400 font-mono block mb-1">Error:</span>
+          <pre className="text-sm font-mono text-red-800 whitespace-pre-wrap">{cell.stderr}</pre>
         </div>
       )}
     </div>
@@ -193,7 +196,7 @@ function IntakeSummaryCard({ intake }: { intake: IntakeJSON }) {
           </div>
         ) : null
       )}
-      {intake.constraints?.length > 0 && (
+      {intake.constraints && intake.constraints.length > 0 && (
         <div className="col-span-2 sm:col-span-3">
           <span className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Constraints</span>
           <div className="flex flex-wrap gap-1.5">
@@ -356,6 +359,9 @@ export default function WorkflowPage() {
   const assembleTriggered = useRef(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Dynamic execution state storage for streaming stdout, stderr, and component spins
+  const [cellOutputs, setCellOutputs] = useState<Record<string, { output?: string; stderr?: string; isRunning?: boolean }>>({});
+
   function triggerAssembly(wd: NonNullable<typeof workflowData>) {
     if (assembleTriggered.current) return;
     assembleTriggered.current = true;
@@ -373,15 +379,12 @@ export default function WorkflowPage() {
       constraints: wd.constraints ?? [],
     };
 
-    // Route returns 200 immediately; assembly runs in the background on the server.
-    // Convex reactive query picks up notebookCells when the agent finishes.
     fetch('/api/assemble-workflow', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ intake: intakeForAgent, workflowId }),
     }).catch((e: unknown) => setAssembleError(String(e)));
 
-    // Safety timeout: if cells haven't arrived in 10 min, surface an error.
     timeoutRef.current = setTimeout(() => setTimedOut(true), 10 * 60 * 1000);
   }
 
@@ -406,18 +409,61 @@ export default function WorkflowPage() {
 
   const convexCells = workflowData?.notebookCells ?? [];
   const hasRealCells = convexCells.length > 0;
-  const cells: Cell[] = hasRealCells ? fromConvexCells(convexCells) : [];
+  
+  // Combine native Convex static structures with dynamic execution outputs
+  const cells: Cell[] = hasRealCells
+    ? fromConvexCells(convexCells).map((cell) => ({
+        ...cell,
+        output: cellOutputs[cell.id]?.output,
+        stderr: cellOutputs[cell.id]?.stderr,
+        isRunning: cellOutputs[cell.id]?.isRunning,
+      }))
+    : [];
 
-  function runCell(id: string) {
-    setRanCells((prev) => new Set([...prev, id]));
+  async function runCell(id: string) {
+    const targetCell = cells.find((c) => c.id === id);
+    if (!targetCell) return;
+
+    setCellOutputs((prev) => ({ ...prev, [id]: { isRunning: true } }));
+
+    try {
+      const response = await fetch('/api/run-cell', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: targetCell.source,
+          packages: workflowData?.packages ?? [],
+        }),
+      });
+
+      const resData = await response.json();
+
+      setCellOutputs((prev) => ({
+        ...prev,
+        [id]: {
+          output: resData.stdout || undefined,
+          stderr: resData.stderr || undefined,
+          isRunning: false,
+        },
+      }));
+      setRanCells((prev) => new Set([...prev, id]));
+    } catch {
+      setCellOutputs((prev) => ({
+        ...prev,
+        [id]: {
+          stderr: 'Network error or execution timeout occurred.',
+          isRunning: false,
+        },
+      }));
+      setRanCells((prev) => new Set([...prev, id]));
+    }
   }
 
   async function runAll() {
     setRunningAll(true);
     const codeCells = cells.filter((c) => c.type === 'code');
     for (const cell of codeCells) {
-      await new Promise((r) => setTimeout(r, 400));
-      setRanCells((prev) => new Set([...prev, cell.id]));
+      await runCell(cell.id);
     }
     setRunningAll(false);
   }

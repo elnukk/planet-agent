@@ -1,4 +1,4 @@
-// workflows.ts
+// convex/workflows.ts
 // PURPOSE: Convex query and mutation functions for saving and retrieving workflows.
 // CONNECTS TO:
 //   - schema.ts for the workflows table definition
@@ -6,20 +6,12 @@
 //   - src/app/dashboard/page.tsx reads from here to list saved workflows
 //   - src/app/workflow/[id]/page.tsx reads from here to load a single workflow
 
-//
-// FUNCTIONS NEEDED:
-//
-// queries (read):
-//   - getWorkflow(id)
-//       returns a single workflow by id
-//       used by the workflow view page to load the notebook + intake JSON
-//
-
-// convex/workflowQueries.ts
-
-
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+
+// ─────────────────────────────────────────────
+// QUERIES
+// ─────────────────────────────────────────────
 
 export const getWorkflow = query({
   args: { id: v.id("workflows") },
@@ -33,35 +25,15 @@ export const getUserWorkflows = query({
   handler: async (ctx, { userId }) => {
     return await ctx.db
       .query("workflows")
-        .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .order("desc")
       .collect();
   },
 });
 
-
-
-//   - getUserWorkflows(userId)
-//       returns all workflows for a user
-//       used by the dashboard to list saved workflows
-//
-
-// mutations (write):
-//   - createWorkflow(userId, intakeJson, notebookCells, sourceCells)
-//       called after assembly is complete in M2
-//       saves the full workflow to the database
-//       returns the new workflow id
-//
-//   - updateWorkflow(id, notebookCells)
-//       called when the user edits a workflow via chat in M3
-//       updates the notebook cells in place
-//
-//   - deleteWorkflow(id)
-//       deletes a workflow and its associated conversations
-//
-// RESOURCES:
-// https://docs.convex.dev/functions/queries
-// https://docs.convex.dev/functions/mutations
+// ─────────────────────────────────────────────
+// MUTATIONS
+// ─────────────────────────────────────────────
 
 export const createWorkflow = mutation({
   args: {
@@ -90,6 +62,8 @@ export const createWorkflow = mutation({
       cellType: v.union(v.literal("code"), v.literal("markdown"), v.literal("text")),
       source: v.string(),
     })),
+    // 1. Added packages validator to createWorkflow
+    packages: v.optional(v.array(v.string())),
     sourceNotebooks: v.array(v.object({
       filename: v.string(),
       cellIndex: v.number(),
@@ -113,18 +87,30 @@ export const updateWorkflow = mutation({
       cellType: v.union(v.literal("code"), v.literal("markdown"), v.literal("text")),
       source: v.string(),
     })),
+    // 2. Added packages validator to updateWorkflow
+    packages: v.optional(v.array(v.string())),
     sourceNotebooks: v.optional(v.array(v.object({
       filename: v.string(),
       cellIndex: v.number(),
       content: v.string(),
     }))),
   },
-  handler: async (ctx, { id, notebookCells, sourceNotebooks }) => {
+  handler: async (ctx, { id, notebookCells, sourceNotebooks, packages }) => {
+    // 3. Build a dynamic patches payload depending on what args were passed
+    const patches: any = {
+      notebookCells,
+      updatedAt: Date.now(),
+    };
+
     if (sourceNotebooks !== undefined) {
-      await ctx.db.patch(id, { notebookCells, sourceNotebooks, updatedAt: Date.now() });
-    } else {
-      await ctx.db.patch(id, { notebookCells, updatedAt: Date.now() });
+      patches.sourceNotebooks = sourceNotebooks;
     }
+
+    if (packages !== undefined) {
+      patches.packages = packages;
+    }
+
+    await ctx.db.patch(id, patches);
   },
 });
 

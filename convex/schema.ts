@@ -138,6 +138,8 @@ export default defineSchema({
       })
     ),
 
+    packages: v.optional(v.array(v.string())),
+
     // provenance tracking (which notebooks contributed)
     sourceNotebooks: v.array(
       v.object({
