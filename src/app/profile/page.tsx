@@ -3,6 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import { useMutation } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
+import type { Id } from '../../../convex/_generated/dataModel';
 import {
   getCurrentUser,
   signOut,
@@ -74,6 +77,7 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
 // ─── Profile page ─────────────────────────────────────────────────────────────
 export default function ProfilePage() {
   const router = useRouter();
+  const saveApiKeyMutation = useMutation(api.users.saveApiKey);
   const [user, setUser] = useState<User | null>(null);
   const [tab, setTab] = useState<Tab>('account');
   const [mounted, setMounted] = useState(false);
@@ -163,7 +167,16 @@ export default function ProfilePage() {
   function handleAddKey(e: React.FormEvent) {
     e.preventDefault();
     if (!user || !newKeyDesc.trim() || !newKeyValue.trim()) return;
-    addApiKey(user.id, newKeyDesc.trim(), newKeyValue.trim());
+    const desc = newKeyDesc.trim();
+    const val = newKeyValue.trim();
+    addApiKey(user.id, desc, val);
+    if (user.convexUserId) {
+      saveApiKeyMutation({
+        id: user.convexUserId as Id<'users'>,
+        apiKeyDescription: desc,
+        apiKeyValue: val,
+      });
+    }
     refreshUser();
     setNewKeyDesc('');
     setNewKeyValue('');
@@ -362,7 +375,7 @@ export default function ProfilePage() {
                     <input type="text" value={newKeyDesc} onChange={(e) => setNewKeyDesc(e.target.value)}
                       required placeholder="Key description (e.g. Planet NICFI API)"
                       className={INPUT} />
-                    <input type="text" value={newKeyValue} onChange={(e) => setNewKeyValue(e.target.value)}
+                    <input type="password" value={newKeyValue} onChange={(e) => setNewKeyValue(e.target.value)}
                       required placeholder="API key value"
                       className={INPUT} />
                     <div className="flex gap-2">
@@ -552,7 +565,12 @@ export default function ProfilePage() {
                   <div className="pt-4">
                     <button
                       onClick={() => {
-                        const data = JSON.stringify(user, null, 2);
+                        const { apiKeys, ...safeUser } = user!;
+                        const exportData = {
+                          ...safeUser,
+                          apiKeys: (apiKeys ?? []).map((k) => ({ id: k.id, description: k.description })),
+                        };
+                        const data = JSON.stringify(exportData, null, 2);
                         const blob = new Blob([data], { type: 'application/json' });
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement('a');

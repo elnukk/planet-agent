@@ -6,6 +6,8 @@ import Image from 'next/image';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
+import { getCurrentUser } from '@/lib/auth';
+import type { User } from '@/lib/auth';
 import planetLogo from '../../dashboard/planetlogo.png';
 import { type IntakeJSON } from '@/lib/workflowIntake';
 
@@ -209,7 +211,7 @@ function IntakeSummaryCard({ intake }: { intake: IntakeJSON }) {
   );
 }
 
-function ChatPanel({ workflowId, intake, onClose }: { workflowId: string; intake: IntakeJSON | null; onClose: () => void }) {
+function ChatPanel({ workflowId, intake, apiKeyValue, onClose }: { workflowId: string; intake: IntakeJSON | null; apiKeyValue: string | null; onClose: () => void }) {
   const context = intake
     ? `Use case: ${intake.use_case}. Region: ${intake.region?.description}. Product: ${intake.planet_product}. Intent: ${intake.inferred_intent}.`
     : '';
@@ -242,7 +244,7 @@ function ChatPanel({ workflowId, intake, onClose }: { workflowId: string; intake
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, context }),
+        body: JSON.stringify({ workflowId, message: text, context, planetApiKey: apiKeyValue ?? undefined }),
       });
       const data = await res.json();
       const reply = data.reply || BOT_REPLIES[replyIdx % BOT_REPLIES.length];
@@ -327,10 +329,21 @@ export default function WorkflowPage() {
   const params = useParams();
   const workflowId = params?.id as string;
 
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  useEffect(() => {
+    setCurrentUser(getCurrentUser());
+  }, []);
+
   const workflowData = useQuery(
     api.workflows.getWorkflow,
     workflowId ? { id: workflowId as Id<'workflows'> } : 'skip',
   );
+
+  const userData = useQuery(
+    api.users.getUser,
+    currentUser?.convexUserId ? { id: currentUser.convexUserId as Id<'users'> } : 'skip',
+  );
+  const apiKeyValue = userData?.apiKeyValue ?? null;
 
   const intake: IntakeJSON | null = workflowData
     ? {
@@ -592,7 +605,7 @@ export default function WorkflowPage() {
       </button>
 
       {chatOpen && workflowId && (
-        <ChatPanel workflowId={workflowId} intake={intake} onClose={() => setChatOpen(false)} />
+        <ChatPanel workflowId={workflowId} intake={intake} apiKeyValue={apiKeyValue} onClose={() => setChatOpen(false)} />
       )}
     </div>
   );
