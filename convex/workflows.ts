@@ -120,11 +120,18 @@ export const updateWorkflow = mutation({
       content: v.string(),
     }))),
     packages: v.optional(v.array(v.string())),
+    dateRange: v.optional(v.object({ start: v.string(), end: v.string() })),
+    regionDescription: v.optional(v.string()),
   },
-  handler: async (ctx, { id, notebookCells, sourceNotebooks, packages }) => {
+  handler: async (ctx, { id, notebookCells, sourceNotebooks, packages, dateRange, regionDescription }) => {
     const patch: Record<string, unknown> = { notebookCells, updatedAt: Date.now() };
     if (sourceNotebooks !== undefined) patch.sourceNotebooks = sourceNotebooks;
     if (packages !== undefined) patch.packages = packages;
+    if (dateRange !== undefined) patch.dateRange = dateRange;
+    if (regionDescription !== undefined) {
+      const existing = await ctx.db.get(id);
+      patch.region = { ...(existing?.region ?? {}), description: regionDescription };
+    }
     await ctx.db.patch(id, patch);
   },
 });
