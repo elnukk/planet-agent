@@ -4,36 +4,55 @@ import { Sandbox } from 'e2b';
 
 export async function POST(req: NextRequest) {
   try {
-    const { code, packages } = await req.json() as { code: string; packages?: string[] };
+    const { code } = await req.json();
 
     if (!code || typeof code !== 'string') {
       return NextResponse.json({ error: 'Missing code' }, { status: 400 });
     }
 
-    const sandbox = await Sandbox.create({ apiKey: process.env.E2B_API_KEY });
+    // Initialize the sandbox with your API keys passed into the environment
+    const sandbox = await Sandbox.create({ 
+      apiKey: process.env.E2B_API_KEY,
+      envs: {
+        PLANET_API_KEY: process.env.PLANET_API_KEY || '',
+        ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
+        GOOGLE_API_KEY: process.env.GOOGLE_API_KEY || '',
+      }
+    });
 
     try {
-      if (packages && packages.length > 0) {
-        await sandbox.commands.run(
-          `pip install -q ${packages.map((p) => JSON.stringify(p)).join(' ')}`
-        );
-      }
-
-      const result = await sandbox.commands.run(
-        `python3 -c ${JSON.stringify(code)}`
+      /**
+       * 1. Install Dependencies
+       * Note: 'os', 'json', 'time', and 'collections' are built-in to Python.
+       * We install the third-party libraries needed for Planet and analysis.
+       */
+      await sandbox.commands.run(
+        'pip install planet rasterio numpy matplotlib plotly scikit-learn google-generativeai anthropic -q'
       );
+
+      /**
+       * 2. Execute User Code
+       * We use JSON.stringify to safely escape the code string for the shell.
+       */
+      // Write the code string cleanly to a file inside the sandbox
+      await sandbox.files.write('exec_cell.py', code);
+
+      // Run the script file safely
+      const result = await sandbox.commands.run('python3 exec_cell.py');
 
       return NextResponse.json({
         stdout: result.stdout,
         stderr: result.stderr,
+        exitCode: result.exitCode,
       });
     } finally {
+      // 3. Always kill the sandbox to prevent billing leaks
       await sandbox.kill();
     }
   } catch (error: any) {
     console.error("Sandbox Error:", error);
     return NextResponse.json(
-      { error: error.message || 'Internal Server Error' },
+      { error: error.message || 'Internal Server Error' }, 
       { status: 500 }
     );
   }
