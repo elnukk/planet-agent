@@ -62,14 +62,12 @@ export const createWorkflow = mutation({
       cellType: v.union(v.literal("code"), v.literal("markdown"), v.literal("text")),
       source: v.string(),
     })),
-    // 1. Added packages validator to createWorkflow
     packages: v.optional(v.array(v.string())),
     sourceNotebooks: v.array(v.object({
       filename: v.string(),
       cellIndex: v.number(),
       content: v.string(),
     })),
-    packages: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -88,14 +86,12 @@ export const updateWorkflow = mutation({
       cellType: v.union(v.literal("code"), v.literal("markdown"), v.literal("text")),
       source: v.string(),
     })),
-    // 2. Added packages validator to updateWorkflow
     packages: v.optional(v.array(v.string())),
     sourceNotebooks: v.optional(v.array(v.object({
       filename: v.string(),
       cellIndex: v.number(),
       content: v.string(),
     }))),
-    packages: v.optional(v.array(v.string())),
     dateRange: v.optional(v.object({ start: v.string(), end: v.string() })),
     regionDescription: v.optional(v.string()),
   },

@@ -10,7 +10,8 @@
       "Bash(python3 -c \"import json; d=json.load\\(open\\('/Users/elanukarakus/cs52/knowledge-base/data/notebooks_metadata.json'\\)\\); print\\(f'{len\\(d\\)} notebooks indexed'\\)\")",
       "Bash(python3 -c \"import fastapi\")",
       "Bash(python3 -c \"import uvicorn\")",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Bash(grep -v \"^$\")"
     ]
   }
 }

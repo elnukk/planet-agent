@@ -4,14 +4,13 @@ import { Sandbox } from 'e2b';
 
 export async function POST(req: NextRequest) {
   try {
-    const { code } = await req.json();
+    const { code, packages } = await req.json();
 
     if (!code || typeof code !== 'string') {
       return NextResponse.json({ error: 'Missing code' }, { status: 400 });
     }
 
-    // Initialize the sandbox with your API keys passed into the environment
-    const sandbox = await Sandbox.create({ 
+    const sandbox = await Sandbox.create({
       apiKey: process.env.E2B_API_KEY,
       envs: {
         PLANET_API_KEY: process.env.PLANET_API_KEY || '',
@@ -21,14 +20,10 @@ export async function POST(req: NextRequest) {
     });
 
     try {
-      /**
-       * 1. Install Dependencies
-       * Note: 'os', 'json', 'time', and 'collections' are built-in to Python.
-       * We install the third-party libraries needed for Planet and analysis.
-       */
-      await sandbox.commands.run(
-        'pip install planet rasterio numpy matplotlib plotly scikit-learn google-generativeai anthropic -q'
-      );
+      const pkgList = Array.isArray(packages) && packages.length > 0
+        ? packages.join(' ')
+        : 'planet rasterio numpy matplotlib plotly scikit-learn google-generativeai anthropic';
+      await sandbox.commands.run(`pip install ${pkgList} -q`);
 
       /**
        * 2. Execute User Code

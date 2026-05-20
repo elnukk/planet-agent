@@ -66,50 +66,6 @@ async function openInColab(cells: Array<{ cellType: string; source: string }>, n
   window.open(url, '_blank');
 }
 
-function buildIpynb(cells: Array<{ cellType: string; source: string }>) {
-  return {
-    nbformat: 4,
-    nbformat_minor: 5,
-    metadata: {
-      kernelspec: { display_name: 'Python 3', language: 'python', name: 'python3' },
-      language_info: { name: 'python', version: '3.10.0' },
-    },
-    cells: cells.map((cell) => {
-      const lines = cell.source.split('\n');
-      const source = lines.map((line, i) => (i < lines.length - 1 ? line + '\n' : line));
-      if (cell.cellType === 'code') {
-        return { cell_type: 'code', execution_count: null, metadata: {}, outputs: [], source };
-      }
-      return { cell_type: 'markdown', metadata: {}, source };
-    }),
-  };
-}
-
-function downloadNotebook(cells: Array<{ cellType: string; source: string }>, name: string) {
-  const json = JSON.stringify(buildIpynb(cells), null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${name.replace(/\s+/g, '_').toLowerCase()}.ipynb`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-async function openInColab(cells: Array<{ cellType: string; source: string }>, name: string) {
-  const res = await fetch('/api/create-gist', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ cells, name }),
-  });
-  if (!res.ok) {
-    alert('Failed to create Gist. Make sure GITHUB_TOKEN is set in .env.local.');
-    return;
-  }
-  const { url } = await res.json() as { url: string };
-  window.open(url, '_blank');
-}
-
 function fromConvexCells(
   convexCells: Array<{ cellType: string; source: string }>,
 ): Cell[] {
