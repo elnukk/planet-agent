@@ -162,7 +162,9 @@ filling in the actual values from intake where shown:
 (set to: {json.dumps(intake.get("region", {}).get("geometry", {}))})
    - Hardcoded start dates → `DATE_START` (set to: "{intake.get("date_range", {}).get("start", "")}")
    - Hardcoded end dates → `DATE_END` (set to: "{intake.get("date_range", {}).get("end", "")}")
-   - Hardcoded API key strings → `os.environ["PL_API_KEY"]`
+   - Hardcoded API key strings → use `os.environ["<name>"]` where <name> is one of \
+the available env vars: {json.dumps(intake.get("available_env_vars", ["PL_API_KEY"]))}. \
+Pick the most appropriate one for the context (e.g. the one whose name looks like a Planet API key).
    - Hardcoded product type strings → `PLANET_PRODUCT` \
 (set to: "{intake.get("planet_product", "")}")
 
@@ -188,12 +190,28 @@ Rules:
 - Preserve the step_id order.
 - "packages" must list the pip package name for every import (e.g. `import cv2` → `opencv-python`, \
 `import PIL` → `Pillow`, `import sklearn` → `scikit-learn`). Omit stdlib modules.
+- NEVER write `from matplotlib.colors import colors` — use `import matplotlib.colors as mcolors` instead.
+- NEVER write `from planet.clients.basemaps import BasemapsClient` or `from planet.clients import BasemapsClient` — BasemapsClient is a demo helper class defined inside individual notebooks, not a real planet SDK export. For Basemaps API access use `import requests` and authenticate with `session.auth = (api_key, '')`.
 - Respond with valid JSON only — no markdown fences, no explanation."""
 
     return _parse_json(_call_llm(prompt))
 
 
 # ─── Phase 3: Wrap ────────────────────────────────────────────────────────────
+
+_IMPORT_FIXES = [
+    ("from matplotlib.colors import colors", "import matplotlib.colors as mcolors"),
+    # BasemapsClient is a demo class defined inside Planet notebooks, not an SDK export.
+    # The Basemaps API is accessed via requests.Session with (api_key, '') auth.
+    ("from planet.clients.basemaps import BasemapsClient", "import requests  # Basemaps API uses requests directly"),
+    ("from planet.clients import BasemapsClient", "import requests  # Basemaps API uses requests directly"),
+]
+
+def _patch_imports(source: str) -> str:
+    for bad, good in _IMPORT_FIXES:
+        source = source.replace(bad, good)
+    return source
+
 
 def _build_notebook_cells(plan: dict, assembled: dict) -> list[dict]:
     """Build the final nbformat-compatible cell list."""
@@ -208,7 +226,7 @@ def _build_notebook_cells(plan: dict, assembled: dict) -> list[dict]:
     })
 
     # Imports code cell
-    imports_src = assembled.get("imports", "").strip()
+    imports_src = _patch_imports(assembled.get("imports", "").strip())
     if imports_src:
         cells.append({
             "cell_type": "code",
@@ -234,7 +252,7 @@ def _build_notebook_cells(plan: dict, assembled: dict) -> list[dict]:
 
         cells.append({
             "cell_type": "code",
-            "source": cell.get("source", "").strip(),
+            "source": _patch_imports(cell.get("source", "").strip()),
             "metadata": {
                 "step_id": step_id,
                 "provenance": cell.get("provenance", {}),
