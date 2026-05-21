@@ -29,33 +29,41 @@ export async function POST(req: NextRequest) {
     });
 
     try {
+      // 1. Install dependencies
       const pkgList = Array.isArray(packages) && packages.length > 0
         ? packages.join(' ')
         : 'planet rasterio numpy pandas matplotlib plotly scikit-learn';
       await sandbox.commands.run(`pip install ${pkgList} -q`);
 
+      // 2. Write the code string cleanly to a file inside the sandbox
       await sandbox.files.write('exec_cell.py', code);
 
-      let stdout = '';
-      let stderr = '';
-      let exitCode = 0;
       try {
+        // 3. Execute user code file safely
         const result = await sandbox.commands.run('python3 exec_cell.py');
-        stdout = result.stdout;
-        stderr = result.stderr;
-        exitCode = result.exitCode;
-      } catch (execError: any) {
-        stdout = execError.result?.stdout ?? '';
-        stderr = execError.result?.stderr ?? execError.message ?? 'Unknown error';
-        exitCode = execError.result?.exitCode ?? 1;
-      }
 
-      return NextResponse.json({ stdout, stderr, exitCode });
+        return NextResponse.json({
+          stdout: result.stdout,
+          stderr: result.stderr,
+          exitCode: result.exitCode,
+        });
+      } catch (executionError: any) {
+        // Intercept runtime exceptions (like raise ValueError) instead of crashing the API route
+        console.log("Python execution failed. Extracting stderr traceback strings gracefully...");
+        
+        return NextResponse.json({
+          stdout: executionError.stdout || '',
+          stderr: executionError.stderr || executionError.message || 'Execution failed',
+          exitCode: executionError.exitCode || 1,
+        });
+      }
     } finally {
+      // 4. Always kill the sandbox to prevent billing leaks
       await sandbox.kill();
     }
   } catch (error: any) {
-    console.error("Sandbox Error:", error);
+    // This only catches global infrastructure/network issues initializing the sandbox environment
+    console.error("Sandbox Initialization Error:", error);
     return NextResponse.json(
       { error: error.message || 'Internal Server Error' },
       { status: 500 }
