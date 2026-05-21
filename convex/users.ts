@@ -126,3 +126,17 @@ export const updateUser = mutation({
     return await ctx.db.get(id);
   },
 });
+
+export const setApiKey = mutation({
+  args: {
+    id: v.id("users"),
+    apiKeyDescription: v.optional(v.string()),
+    apiKeyValue: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { id, ...updates } = args;
+    const user = await ctx.db.get(id);
+    if (!user) throw new Error("User not found");
+    await ctx.db.patch(id, updates);
+  },
+});

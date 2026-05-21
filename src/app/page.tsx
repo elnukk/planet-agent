@@ -196,7 +196,10 @@ export default function AuthPage() {
           if (convexUser) {
             setConvexUserId(user.id, convexUser._id as string);
           } else {
-            const convexId = await createUser({ name: user.name, email: email.toLowerCase().trim() });
+            const convexId = await createUser({
+              name: user.name,
+              email: email.toLowerCase().trim(),
+            });
             setConvexUserId(user.id, convexId as string);
           }
         }

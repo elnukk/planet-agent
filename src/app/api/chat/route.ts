@@ -24,6 +24,7 @@ type ChatRequestBody = {
   workflowId: string;
   message: string;
   notebookCells?: NotebookCell[];
+  planetApiKey?: string;
 };
 
 // Claude only needs to emit the cells that change, not the full notebook.
@@ -120,7 +121,7 @@ function toClaudeMessages(
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as ChatRequestBody;
-    const { workflowId, message, notebookCells: clientCells } = body;
+    const { workflowId, message, notebookCells: clientCells, planetApiKey } = body;
 
     if (!workflowId || !message?.trim()) {
       return NextResponse.json({ error: 'workflowId and message are required' }, { status: 400 });
@@ -174,6 +175,7 @@ export async function POST(req: NextRequest) {
     const systemPrompt = `
 You are a satellite data workflow assistant for Project Centinela.
 Today's date is ${today}.
+Planet API authentication: ${planetApiKey ? 'configured' : 'not configured — remind the user to add their key on the Profile page if they want to run cells'}.
 
 You have two modes:
 - Q&A: answer questions about the notebook, explain cells, describe what steps do and why.

@@ -85,7 +85,7 @@ function WorkflowCard({
       {/* Delete button shown on hover */}
       <button
         onClick={(e) => { e.stopPropagation(); onDelete(); }}
-        title="Move to trash"
+        title="Delete"
         className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
       >
         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -114,12 +114,9 @@ function AddCard({ onClick }: { onClick: () => void }) {
 }
 
 
-type View = 'workflows' | 'trash';
-
 export default function DashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
-  const [view, setView] = useState<View>('workflows');
   const [mounted, setMounted] = useState(false);
 
   const createConvexUser = useMutation(api.users.createUser);
@@ -194,36 +191,13 @@ export default function DashboardPage() {
         {/* Section header */}
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-3xl font-bold text-gray-900">
-            {view === 'workflows'
-              ? (firstName ? `Hello ${firstName}!` : 'Hello!')
-              : 'Recently Deleted'}
+            {firstName ? `Hello ${firstName}!` : 'Hello!'}
           </h1>
-          <button
-            onClick={() => setView(view === 'workflows' ? 'trash' : 'workflows')}
-            className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-700 transition-colors"
-          >
-            {view === 'trash' ? (
-              <>
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
-                </svg>
-                Back to Workflows
-              </>
-            ) : (
-              <>
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-                </svg>
-                Recently Deleted
-              </>
-            )}
-          </button>
         </div>
 
         {/* Workflows view */}
-        {view === 'workflows' && (
-          <>
-            {workflows.length === 0 ? (
+        <>
+          {workflows.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <div className="w-20 h-20 rounded-2xl flex items-center justify-center mb-5 bg-cyan-50">
                   <svg className="w-10 h-10 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -259,20 +233,6 @@ export default function DashboardPage() {
               </div>
             )}
           </>
-        )}
-
-        {/* Trash view — workflows are permanently deleted now */}
-        {view === 'trash' && (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="w-20 h-20 rounded-2xl flex items-center justify-center mb-5 bg-gray-100">
-              <svg className="w-10 h-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-              </svg>
-            </div>
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Trash is empty</h2>
-            <p className="text-gray-400 text-sm">Deleted workflows are permanently removed.</p>
-          </div>
-        )}
       </main>
 
     </div>

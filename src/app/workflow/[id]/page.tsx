@@ -206,7 +206,7 @@ function IntakeSummaryCard({ intake }: { intake: IntakeJSON }) {
   );
 }
 
-function ChatPanel({ workflowId, intake, notebookCells, onClose }: { workflowId: string; intake: IntakeJSON | null; notebookCells: Array<{ cellType: string; source: string }>; onClose: () => void }) {
+function ChatPanel({ workflowId, intake, apiKeyValue, notebookCells, onClose }: { workflowId: string; intake: IntakeJSON | null; apiKeyValue: string | null; notebookCells: Array<{ cellType: string; source: string }>; onClose: () => void }) {
   const convexMessages = useQuery(
     api.conversations.getConversation,
     { workflowId: workflowId as Id<'workflows'> },
@@ -234,7 +234,7 @@ function ChatPanel({ workflowId, intake, notebookCells, onClose }: { workflowId:
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workflowId, message: text, notebookCells }),
+        body: JSON.stringify({ workflowId, message: text, notebookCells, planetApiKey: apiKeyValue ?? undefined }),
       });
       const data = await res.json() as { reply?: string; error?: string };
       const reply = data.reply || data.error || 'Something went wrong. Please try again.';
@@ -312,10 +312,6 @@ function ChatPanel({ workflowId, intake, notebookCells, onClose }: { workflowId:
   );
 }
 
-function getUserApiKeys(): Array<{ description: string; key: string }> {
-  return (getCurrentUser()?.apiKeys ?? []).map(({ description, key }) => ({ description, key }));
-}
-
 export default function WorkflowPage() {
   const params = useParams();
   const workflowId = params?.id as string;
@@ -324,6 +320,13 @@ export default function WorkflowPage() {
     api.workflows.getWorkflow,
     workflowId ? { id: workflowId as Id<'workflows'> } : 'skip',
   );
+
+  const localUser = getCurrentUser();
+  const convexUserData = useQuery(
+    api.users.getUser,
+    localUser?.convexUserId ? { id: localUser.convexUserId as Id<'users'> } : 'skip',
+  );
+  const apiKeyValue = convexUserData?.apiKeyValue ?? null;
 
   const intake: IntakeJSON | null = workflowData
     ? {
@@ -367,7 +370,7 @@ export default function WorkflowPage() {
       user_description: wd.userDescription ?? '',
       inferred_intent: wd.inferredIntent ?? '',
       constraints: wd.constraints ?? [],
-      available_env_vars: getUserApiKeys().map((k) => k.description),
+      available_env_vars: apiKeyValue ? ['PL_API_KEY', 'PLANET_API_KEY'] : [],
     };
 
     fetch('/api/assemble-workflow', {
@@ -411,9 +414,16 @@ export default function WorkflowPage() {
       }))
     : [];
 
+  const [showApiKeyPrompt, setShowApiKeyPrompt] = useState(false);
+
   async function runCell(id: string) {
     const targetCell = cells.find((c) => c.id === id);
     if (!targetCell) return;
+
+    if (!apiKeyValue) {
+      setShowApiKeyPrompt(true);
+      return;
+    }
 
     setCellOutputs((prev) => ({ ...prev, [id]: { isRunning: true } }));
 
@@ -432,7 +442,7 @@ export default function WorkflowPage() {
         body: JSON.stringify({
           code,
           packages: workflowData?.packages ?? [],
-          userApiKeys: getUserApiKeys(),
+          planetApiKey: apiKeyValue,
         }),
       });
 
@@ -442,7 +452,7 @@ export default function WorkflowPage() {
         ...prev,
         [id]: {
           output: resData.stdout || undefined,
-          stderr: resData.stderr || undefined,
+          stderr: resData.stderr || (!response.ok ? (resData.error ?? 'Sandbox error — check that E2B_API_KEY is set.') : undefined),
           isRunning: false,
         },
       }));
@@ -460,6 +470,10 @@ export default function WorkflowPage() {
   }
 
   async function runAll() {
+    if (!apiKeyValue) {
+      setShowApiKeyPrompt(true);
+      return;
+    }
     setRunningAll(true);
     const codeCells = cells.filter((c) => c.type === 'code');
     for (const cell of codeCells) {
@@ -517,7 +531,7 @@ export default function WorkflowPage() {
               Download .ipynb
             </button>
             <button
-              onClick={() => openInColab(convexCells, workflowName)}
+              onClick={() => { if (!apiKeyValue) { setShowApiKeyPrompt(true); return; } openInColab(convexCells, workflowName); }}
               className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold border transition-colors"
               style={{ borderColor: '#F9AB00', color: '#F9AB00' }}
             >
@@ -621,7 +635,46 @@ export default function WorkflowPage() {
       </button>
 
       {chatOpen && workflowId && (
-        <ChatPanel workflowId={workflowId} intake={intake} notebookCells={convexCells} onClose={() => setChatOpen(false)} />
+        <ChatPanel workflowId={workflowId} intake={intake} apiKeyValue={apiKeyValue} notebookCells={convexCells} onClose={() => setChatOpen(false)} />
+      )}
+
+      {showApiKeyPrompt && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+          onClick={() => setShowApiKeyPrompt(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#e0f7f8' }}>
+                <svg className="w-5 h-5" style={{ color: TEAL }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 0 1 21.75 8.25Z" />
+                </svg>
+              </div>
+              <h2 className="text-base font-bold text-gray-900">Planet API Key Required</h2>
+            </div>
+            <p className="text-sm text-gray-500 mb-5 leading-relaxed">
+              A Planet API key is needed to run this workflow. Add your key on the Profile page and come back to run the analysis.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowApiKeyPrompt(false)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-medium text-gray-600 border border-gray-200 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { window.location.href = '/profile'; }}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors"
+                style={{ backgroundColor: TEAL }}
+              >
+                Go to Profile
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

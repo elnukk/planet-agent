@@ -3,13 +3,15 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import { useMutation } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
+import type { Id } from '../../../convex/_generated/dataModel';
 import {
   getCurrentUser,
   signOut,
   updateUser,
   addApiKey,
   removeApiKey,
-  changePassword,
   type User,
   type ApiKey,
 } from '@/lib/auth';
@@ -18,58 +20,13 @@ import planetLogo from '../dashboard/planetlogo.png';
 const TEAL = '#009DA5';
 const TEAL_LIGHT = '#e0f7f8';
 
-type Tab = 'account' | 'more-settings' | 'delete-account';
+type Tab = 'account' | 'delete-account';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'account', label: 'Account' },
-  { id: 'more-settings', label: 'More Settings' },
   { id: 'delete-account', label: 'Delete Account' },
 ];
 
-// ─── Toggle switch ────────────────────────────────────────────────────────────
-function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      role="switch"
-      aria-checked={checked}
-      onClick={() => onChange(!checked)}
-      className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none flex-shrink-0"
-      style={{ backgroundColor: checked ? TEAL : '#d1d5db' }}
-    >
-      <span
-        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform duration-200 ${
-          checked ? 'translate-x-6' : 'translate-x-1'
-        }`}
-      />
-    </button>
-  );
-}
-
-function SettingRow({
-  label,
-  description,
-  children,
-}: {
-  label: string;
-  description?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center justify-between py-4 border-b border-gray-100 last:border-0">
-      <div className="pr-4">
-        <p className="text-sm font-medium text-gray-800">{label}</p>
-        {description && <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">{description}</p>}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function SectionHeader({ children }: { children: React.ReactNode }) {
-  return (
-    <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1 pt-1">{children}</h3>
-  );
-}
 
 // ─── Profile page ─────────────────────────────────────────────────────────────
 export default function ProfilePage() {
@@ -85,18 +42,14 @@ export default function ProfilePage() {
   const [editOrg, setEditOrg] = useState('');
   const [editRole, setEditRole] = useState('');
 
-  // security state
-  const [currentPw, setCurrentPw] = useState('');
-  const [newPw, setNewPw] = useState('');
-  const [confirmPw, setConfirmPw] = useState('');
-  const [pwError, setPwError] = useState('');
-  const [pwSuccess, setPwSuccess] = useState(false);
-
   // api key state
   const [showAddKey, setShowAddKey] = useState(false);
   const [newKeyDesc, setNewKeyDesc] = useState('');
   const [newKeyValue, setNewKeyValue] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
+
+  const saveApiKeyToConvex = useMutation(api.users.setApiKey);
 
   // delete account
   const [deleteConfirm, setDeleteConfirm] = useState('');
@@ -139,35 +92,30 @@ export default function ProfilePage() {
     setEditing(false);
   }
 
-  function togglePref(key: keyof NonNullable<User['preferences']>, value: boolean) {
-    if (!user) return;
-    updateUser(user.id, { preferences: { ...(user.preferences ?? {}), [key]: value } });
-    refreshUser();
-  }
-
-  function handleChangePassword(e: React.FormEvent) {
-    e.preventDefault();
-    if (!user) return;
-    setPwError('');
-    setPwSuccess(false);
-    if (newPw.length < 6) { setPwError('New password must be at least 6 characters.'); return; }
-    if (newPw !== confirmPw) { setPwError('Passwords do not match.'); return; }
-    const ok = changePassword(user.email, currentPw, newPw);
-    if (!ok) { setPwError('Current password is incorrect.'); return; }
-    setPwSuccess(true);
-    setCurrentPw('');
-    setNewPw('');
-    setConfirmPw('');
-  }
-
-  function handleAddKey(e: React.FormEvent) {
+  async function handleAddKey(e: React.FormEvent) {
     e.preventDefault();
     if (!user || !newKeyDesc.trim() || !newKeyValue.trim()) return;
     addApiKey(user.id, newKeyDesc.trim(), newKeyValue.trim());
     refreshUser();
+    if (user.convexUserId) {
+      await saveApiKeyToConvex({
+        id: user.convexUserId as Id<'users'>,
+        apiKeyDescription: newKeyDesc.trim(),
+        apiKeyValue: newKeyValue.trim(),
+      });
+    }
     setNewKeyDesc('');
     setNewKeyValue('');
     setShowAddKey(false);
+  }
+
+  function toggleReveal(keyId: string) {
+    setRevealedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(keyId)) next.delete(keyId);
+      else next.add(keyId);
+      return next;
+    });
   }
 
   function handleRemoveKey(keyId: string) {
@@ -189,7 +137,6 @@ export default function ProfilePage() {
 
   if (!mounted) return null;
 
-  const prefs = user?.preferences ?? {};
   const apiKeys = user?.apiKeys ?? [];
   const initials = (user?.name ?? '?')
     .split(' ')
@@ -395,9 +342,24 @@ export default function ProfilePage() {
                       <div key={k.id} className="flex items-center justify-between px-4 py-3.5 hover:bg-gray-50 transition-colors">
                         <div className="min-w-0 mr-4">
                           <p className="text-sm font-medium text-gray-800 truncate">{k.description}</p>
-                          <p className="text-xs text-gray-400 font-mono mt-0.5">{maskKey(k.key)}</p>
+                          <p className="text-xs text-gray-400 font-mono mt-0.5">
+                            {revealedIds.has(k.id) ? k.key : maskKey(k.key)}
+                          </p>
                         </div>
                         <div className="flex items-center gap-1 flex-shrink-0">
+                          <button onClick={() => toggleReveal(k.id)} title={revealedIds.has(k.id) ? 'Hide' : 'Reveal'}
+                            className="p-2 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors">
+                            {revealedIds.has(k.id) ? (
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88" />
+                              </svg>
+                            ) : (
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                              </svg>
+                            )}
+                          </button>
                           <button onClick={() => copyKey(k)} title="Copy"
                             className="p-2 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors">
                             {copiedId === k.id ? (
@@ -422,153 +384,6 @@ export default function ProfilePage() {
                   </div>
                 )}
               </div>
-            </div>
-          )}
-
-          {/* ── More Settings ── */}
-          {tab === 'more-settings' && (
-            <div className="p-6 space-y-8">
-
-              {/* Notifications */}
-              <div>
-                <SectionHeader>Notifications</SectionHeader>
-                <div className="mt-3">
-                  <SettingRow label="Email Notifications" description="Receive important account alerts by email">
-                    <Toggle checked={prefs.notifyEmail ?? true} onChange={(v) => togglePref('notifyEmail', v)} />
-                  </SettingRow>
-                  <SettingRow label="Workflow Updates" description="Get notified when your workflows complete or fail">
-                    <Toggle checked={prefs.notifyWorkflow ?? true} onChange={(v) => togglePref('notifyWorkflow', v)} />
-                  </SettingRow>
-                  <SettingRow label="Weekly Digest" description="A weekly summary of your workflow activity">
-                    <Toggle checked={prefs.notifyDigest ?? false} onChange={(v) => togglePref('notifyDigest', v)} />
-                  </SettingRow>
-                  <SettingRow label="Product Updates" description="News about new features and improvements">
-                    <Toggle checked={prefs.notifyMarketing ?? false} onChange={(v) => togglePref('notifyMarketing', v)} />
-                  </SettingRow>
-                </div>
-              </div>
-
-              {/* Security */}
-              <div>
-                <SectionHeader>Security</SectionHeader>
-                <div className="mt-3 space-y-4">
-                  <p className="text-sm font-medium text-gray-700">Change Password</p>
-                  <form onSubmit={handleChangePassword} className="space-y-3">
-                    <input type="password" value={currentPw} onChange={(e) => setCurrentPw(e.target.value)}
-                      required placeholder="Current password" className={INPUT} />
-                    <input type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)}
-                      required placeholder="New password (min 6 characters)" className={INPUT} />
-                    <input type="password" value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)}
-                      required placeholder="Confirm new password" className={INPUT} />
-                    {pwError && <p className="text-xs text-red-500">{pwError}</p>}
-                    {pwSuccess && <p className="text-xs text-green-600">Password updated successfully.</p>}
-                    <button type="submit"
-                      className="w-full py-2.5 rounded-xl text-sm font-semibold text-white transition-colors"
-                      style={{ backgroundColor: TEAL }}>
-                      Update Password
-                    </button>
-                  </form>
-
-                  <div className="pt-2 border-t border-gray-100">
-                    <SettingRow label="Two-Factor Authentication" description="Extra layer of security for your account (coming soon)">
-                      <Toggle checked={prefs.twoFactor ?? false} onChange={(v) => togglePref('twoFactor', v)} />
-                    </SettingRow>
-                  </div>
-                </div>
-              </div>
-
-              {/* Appearance */}
-              <div>
-                <SectionHeader>Appearance &amp; Locale</SectionHeader>
-                <div className="mt-3">
-                  <SettingRow label="Theme" description="Choose your preferred color scheme">
-                    <select
-                      value={prefs.theme ?? 'system'}
-                      onChange={(e) => {
-                        updateUser(user!.id, { preferences: { ...prefs, theme: e.target.value as 'light' | 'dark' | 'system' } });
-                        refreshUser();
-                      }}
-                      className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-cyan-100 bg-white"
-                    >
-                      <option value="system">System Default</option>
-                      <option value="light">Light</option>
-                      <option value="dark">Dark</option>
-                    </select>
-                  </SettingRow>
-                  <SettingRow label="Language" description="Display language for the interface">
-                    <select
-                      value={prefs.language ?? 'English'}
-                      onChange={(e) => {
-                        updateUser(user!.id, { preferences: { ...prefs, language: e.target.value } });
-                        refreshUser();
-                      }}
-                      className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-cyan-100 bg-white"
-                    >
-                      <option>English</option>
-                      <option>Spanish</option>
-                      <option>French</option>
-                      <option>Portuguese</option>
-                      <option>German</option>
-                    </select>
-                  </SettingRow>
-                  <SettingRow label="Timezone" description="Used for scheduling and timestamps">
-                    <input
-                      type="text"
-                      value={prefs.timezone ?? ''}
-                      onChange={(e) => {
-                        updateUser(user!.id, { preferences: { ...prefs, timezone: e.target.value } });
-                        refreshUser();
-                      }}
-                      placeholder="e.g. America/New_York"
-                      className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 w-44 focus:outline-none focus:ring-2 focus:ring-cyan-100"
-                    />
-                  </SettingRow>
-                </div>
-              </div>
-
-              {/* Privacy */}
-              <div>
-                <SectionHeader>Privacy</SectionHeader>
-                <div className="mt-3">
-                  <SettingRow label="Data Sharing" description="Allow anonymized usage data to improve the platform">
-                    <Toggle checked={prefs.privacySharing ?? false} onChange={(v) => togglePref('privacySharing', v)} />
-                  </SettingRow>
-                  <SettingRow label="Analytics" description="Help us understand how you use Project Centinela">
-                    <Toggle checked={prefs.privacyAnalytics ?? false} onChange={(v) => togglePref('privacyAnalytics', v)} />
-                  </SettingRow>
-                  <SettingRow label="Account Visibility" description="Control whether other members can find your profile">
-                    <select
-                      value={prefs.accountVisibility ?? 'private'}
-                      onChange={(e) => {
-                        updateUser(user!.id, { preferences: { ...prefs, accountVisibility: e.target.value as 'public' | 'private' } });
-                        refreshUser();
-                      }}
-                      className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-cyan-100 bg-white"
-                    >
-                      <option value="private">Private</option>
-                      <option value="public">Public</option>
-                    </select>
-                  </SettingRow>
-                  <div className="pt-4">
-                    <button
-                      onClick={() => {
-                        const data = JSON.stringify(user, null, 2);
-                        const blob = new Blob([data], { type: 'application/json' });
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = 'my-centinela-data.json';
-                        a.click();
-                        URL.revokeObjectURL(url);
-                      }}
-                      className="px-4 py-2 rounded-xl text-sm font-medium border border-gray-200 hover:bg-gray-50 transition-colors text-gray-700"
-                    >
-                      Export My Data
-                    </button>
-                  </div>
-                </div>
-              </div>
-
             </div>
           )}
 

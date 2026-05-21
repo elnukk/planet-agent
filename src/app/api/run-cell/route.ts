@@ -4,28 +4,18 @@ import { Sandbox } from 'e2b';
 
 export async function POST(req: NextRequest) {
   try {
-    const { code, packages, userApiKeys } = await req.json();
+    const { code, packages, planetApiKey } = await req.json();
 
     if (!code || typeof code !== 'string') {
       return NextResponse.json({ error: 'Missing code' }, { status: 400 });
     }
 
-    // Build env vars from user's saved keys — description is used as the var name
-    const userEnvs: Record<string, string> = {};
-    if (Array.isArray(userApiKeys)) {
-      for (const { description, key } of userApiKeys) {
-        if (description && key) userEnvs[description] = key;
-      }
-    }
-
     const sandbox = await Sandbox.create({
       apiKey: process.env.E2B_API_KEY,
       envs: {
-        // Fallback empty names — overridden by user's profile keys if present
-        PL_API_KEY: '',
-        PLANET_API_KEY: '',
-        ...userEnvs,
-      }
+        PL_API_KEY: typeof planetApiKey === 'string' ? planetApiKey : '',
+        PLANET_API_KEY: typeof planetApiKey === 'string' ? planetApiKey : '',
+      },
     });
 
     try {
