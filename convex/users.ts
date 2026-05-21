@@ -127,6 +127,25 @@ export const updateUser = mutation({
   },
 });
 
+export const deleteUser = mutation({
+  args: { id: v.id("users") },
+  handler: async (ctx, { id }) => {
+    const workflows = await ctx.db
+      .query("workflows")
+      .withIndex("by_userId", (q) => q.eq("userId", id))
+      .collect();
+    for (const wf of workflows) {
+      const messages = await ctx.db
+        .query("conversations")
+        .withIndex("by_workflowId", (q) => q.eq("workflowId", wf._id))
+        .collect();
+      for (const msg of messages) await ctx.db.delete(msg._id);
+      await ctx.db.delete(wf._id);
+    }
+    await ctx.db.delete(id);
+  },
+});
+
 export const setApiKey = mutation({
   args: {
     id: v.id("users"),

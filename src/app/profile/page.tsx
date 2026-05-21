@@ -50,6 +50,7 @@ export default function ProfilePage() {
   const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
 
   const saveApiKeyToConvex = useMutation(api.users.setApiKey);
+  const deleteUserMutation = useMutation(api.users.deleteUser);
 
   // delete account
   const [deleteConfirm, setDeleteConfirm] = useState('');
@@ -426,7 +427,14 @@ export default function ProfilePage() {
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-100 transition"
                 />
                 <button
-                  onClick={() => { if (deleteConfirm === 'delete my account') { signOut(); router.replace('/'); } }}
+                  onClick={async () => {
+                    if (deleteConfirm !== 'delete my account') return;
+                    if (user?.convexUserId) {
+                      await deleteUserMutation({ id: user.convexUserId as Id<'users'> });
+                    }
+                    signOut();
+                    router.replace('/');
+                  }}
                   disabled={deleteConfirm !== 'delete my account'}
                   className="w-full py-3 rounded-xl text-sm font-semibold text-white bg-red-500 hover:bg-red-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
