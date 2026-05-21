@@ -20,32 +20,41 @@ export async function POST(req: NextRequest) {
     });
 
     try {
+      // 1. Install dependencies
       const pkgList = Array.isArray(packages) && packages.length > 0
         ? packages.join(' ')
         : 'planet rasterio numpy matplotlib plotly scikit-learn google-generativeai anthropic';
       await sandbox.commands.run(`pip install ${pkgList} -q`);
 
-      /**
-       * 2. Execute User Code
-       * We use JSON.stringify to safely escape the code string for the shell.
-       */
-      // Write the code string cleanly to a file inside the sandbox
+      // 2. Write the code string cleanly to a file inside the sandbox
       await sandbox.files.write('exec_cell.py', code);
 
-      // Run the script file safely
-      const result = await sandbox.commands.run('python3 exec_cell.py');
+      try {
+        // 3. Execute user code file safely
+        const result = await sandbox.commands.run('python3 exec_cell.py');
 
-      return NextResponse.json({
-        stdout: result.stdout,
-        stderr: result.stderr,
-        exitCode: result.exitCode,
-      });
+        return NextResponse.json({
+          stdout: result.stdout,
+          stderr: result.stderr,
+          exitCode: result.exitCode,
+        });
+      } catch (executionError: any) {
+        // Intercept runtime exceptions (like raise ValueError) instead of crashing the API route
+        console.log("Python execution failed. Extracting stderr traceback strings gracefully...");
+        
+        return NextResponse.json({
+          stdout: executionError.stdout || '',
+          stderr: executionError.stderr || executionError.message || 'Execution failed',
+          exitCode: executionError.exitCode || 1,
+        });
+      }
     } finally {
-      // 3. Always kill the sandbox to prevent billing leaks
+      // 4. Always kill the sandbox to prevent billing leaks
       await sandbox.kill();
     }
   } catch (error: any) {
-    console.error("Sandbox Error:", error);
+    // This only catches global infrastructure/network issues initializing the sandbox environment
+    console.error("Sandbox Initialization Error:", error);
     return NextResponse.json(
       { error: error.message || 'Internal Server Error' }, 
       { status: 500 }
