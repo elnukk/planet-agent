@@ -44,6 +44,7 @@ export default defineSchema({
 
     // identity
     email: v.string(),
+    username: v.optional(v.string()),
     externalId: v.optional(v.string()),
     name: v.string(),
 
@@ -56,9 +57,18 @@ export default defineSchema({
     organizationName: v.optional(v.string()),
     roleInOrganization: v.optional(v.string()),
 
-    // API keys (IMPORTANT: store hashed or encrypted in real apps)
+    // API keys — array of named keys
+    apiKeys: v.optional(v.array(v.object({
+      id: v.string(),
+      description: v.string(),
+      value: v.string(),
+      createdAt: v.float64(),
+    }))),
+    // legacy single-key fields (kept for existing rows)
     apiKeyDescription: v.optional(v.string()),
     apiKeyValue: v.optional(v.string()),
+
+    emailVerified: v.optional(v.boolean()),
   })
     .index("by_email", ["email"])
     .index("by_externalId", ["externalId"]),
@@ -72,6 +82,9 @@ export default defineSchema({
 
     // ownership
     userId: v.id("users"),
+
+    // display
+    name: v.string(),
 
     // ─── Layer 1 + Intake core fields ───
     useCase: v.string(),
@@ -126,6 +139,14 @@ export default defineSchema({
       })
     ),
 
+    // ─── Assembly status ───
+    assemblyStatus: v.optional(v.union(
+      v.literal("pending"),
+      v.literal("ready"),
+      v.literal("error"),
+    )),
+    assemblyError: v.optional(v.string()),
+
     // ─── Notebook assembly output ───
     notebookCells: v.array(
       v.object({
@@ -152,6 +173,19 @@ export default defineSchema({
   })
     .index("by_userId", ["userId"])
     .index("by_createdAt", ["createdAt"]),
+
+  // ─────────────────────────────────────────────
+  // CONVERSATIONS (chat history per workflow)
+  // ─────────────────────────────────────────────
+  // ─────────────────────────────────────────────
+  // VERIFICATION CODES (short-lived email OTPs)
+  // ─────────────────────────────────────────────
+  verificationCodes: defineTable({
+    email: v.string(),
+    code: v.string(),
+    expiresAt: v.float64(),
+    used: v.boolean(),
+  }).index("by_email", ["email"]),
 
   // ─────────────────────────────────────────────
   // CONVERSATIONS (chat history per workflow)

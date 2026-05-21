@@ -10,6 +10,7 @@
 
 import type * as conversations from "../conversations.js";
 import type * as users from "../users.js";
+import type * as verificationCodes from "../verificationCodes.js";
 import type * as workflows from "../workflows.js";
 
 import type {
@@ -21,6 +22,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   conversations: typeof conversations;
   users: typeof users;
+  verificationCodes: typeof verificationCodes;
   workflows: typeof workflows;
 }>;
 

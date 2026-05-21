@@ -16,7 +16,8 @@
     "e2b": "^1.13.2",
     "next": "^16.2.6",
     "react": "^18",
-    "react-dom": "^18"
+    "react-dom": "^18",
+    "resend": "^6.12.3"
   },
   "devDependencies": {
     "@types/node": "^20",

@@ -9,6 +9,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  username?: string;
   convexUserId?: string;
   phone?: string;
   organization?: string;
@@ -85,7 +86,7 @@ export function createAccount(
   name: string,
   email: string,
   password: string,
-  extra?: { phone?: string; organization?: string; role?: string; apiKeys?: ApiKey[] }
+  extra?: { username?: string; phone?: string; organization?: string; role?: string; apiKeys?: ApiKey[] }
 ): User | 'exists' {
   const users = getUsers();
   if (users.find((u) => u.email.toLowerCase() === email.toLowerCase())) return 'exists';
@@ -93,6 +94,7 @@ export function createAccount(
     id: crypto.randomUUID(),
     name: name.trim(),
     email: email.toLowerCase().trim(),
+    username: extra?.username?.trim() || undefined,
     phone: extra?.phone || undefined,
     organization: extra?.organization || undefined,
     role: extra?.role || undefined,
