@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useMutation } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
-import type { Id } from '../../../convex/_generated/dataModel';
+import type { Id } from 'convex/values';
 import { getCurrentUser } from '@/lib/auth';
 import { storeWorkflowImage } from '@/lib/workflowImages';
 import { type IntakeJSON } from '@/lib/workflowIntake';
@@ -690,23 +690,6 @@ function StepQuestions({
   );
 }
 
-// ─── Helpers for schema type mapping ─────────────────────────────────────────
-function deriveTimeFrame(start: string, end: string): '3mo' | '6mo' | '1yr' | '2yr' | '5yr' | 'custom' {
-  const months = (new Date(end).getTime() - new Date(start).getTime()) / (1000 * 60 * 60 * 24 * 30.44);
-  if (Math.abs(months - 3) < 0.5) return '3mo';
-  if (Math.abs(months - 6) < 0.5) return '6mo';
-  if (Math.abs(months - 12) < 1) return '1yr';
-  if (Math.abs(months - 24) < 1) return '2yr';
-  if (Math.abs(months - 60) < 2) return '5yr';
-  return 'custom';
-}
-
-const VALID_RESOLUTIONS = ['daily', 'weekly', 'biweekly', 'monthly', 'seasonal', 'unknown'] as const;
-type TemporalResolution = typeof VALID_RESOLUTIONS[number];
-function toTemporalResolution(val: string): TemporalResolution {
-  return (VALID_RESOLUTIONS as readonly string[]).includes(val) ? (val as TemporalResolution) : 'unknown';
-}
-
 // ─── Step 8: Summary + workflow creation ──────────────────────────────────────
 function StepSummary({ useCase, startDate, endDate, frequency, fileName, planetProduct, answers, questions, onStartOver }: {
   useCase: string;
@@ -762,7 +745,6 @@ function StepSummary({ useCase, startDate, endDate, frequency, fileName, planetP
       const intake = intakeRef.current;
       const convexId = await createConvexWorkflow({
         userId: user.convexUserId as Id<'users'>,
-        name: workflowName.trim(),
         useCase: workflowName.trim(),
         timeFrame: inferTimeFrame(startDate, endDate),
         dataFrequency: mapFrequency(frequency),

@@ -1,6 +1,3 @@
-import type { ConvexReactClient } from "convex/react";
-import { api } from "../../convex/_generated/api";
-
 export interface ApiKey {
   id: string;
   description: string;
@@ -12,7 +9,6 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  username?: string;
   convexUserId?: string;
   phone?: string;
   organization?: string;
@@ -42,8 +38,22 @@ export interface Workflow {
   updatedAt: string;
 }
 
+const USERS_KEY = 'planet_users';
+const PASSWORDS_KEY = 'planet_passwords';
 const SESSION_KEY = 'planet_session';
 const WORKFLOWS_KEY = 'planet_workflows';
+
+function getUsers(): User[] {
+  try {
+    return JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function saveUsers(users: User[]): void {
+  localStorage.setItem(USERS_KEY, JSON.stringify(users));
+}
 
 function refreshSession(user: User): void {
   localStorage.setItem(SESSION_KEY, JSON.stringify(user));
@@ -59,72 +69,34 @@ export function getCurrentUser(): User | null {
   }
 }
 
-export async function signIn(
-  email: string,
-  password: string,
-  convex: ConvexReactClient
-): Promise<User | null> {
-  const result = await convex.action(api.auth.signIn, {
-    email: email.toLowerCase().trim(),
-    password,
-  });
-  if (!result) return null;
-  const user: User = {
-    id: result.convexId,
-    convexUserId: result.convexId,
-    name: result.name,
-    email: result.email,
-    username: result.username,
-    phone: result.phoneNumber,
-    organization: result.organizationName,
-    role: result.roleInOrganization,
-    apiKeys: [],
-    preferences: {
-      notifyEmail: true,
-      notifyWorkflow: true,
-      notifyDigest: false,
-      notifyMarketing: false,
-      privacySharing: false,
-      privacyAnalytics: false,
-      accountVisibility: 'private',
-      language: 'English',
-      timezone: '',
-      twoFactor: false,
-      theme: 'system',
-    },
-    createdAt: new Date().toISOString(),
-  };
-  refreshSession(user);
+export function signIn(email: string, password: string): User | null {
+  const users = getUsers();
+  const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+  if (!user) return null;
+  const passwords: Record<string, string> = JSON.parse(
+    localStorage.getItem(PASSWORDS_KEY) || '{}'
+  );
+  if (passwords[user.email] !== password) return null;
+  localStorage.setItem(SESSION_KEY, JSON.stringify(user));
   return user;
 }
 
-export async function createAccount(
+export function createAccount(
   name: string,
   email: string,
   password: string,
-  convex: ConvexReactClient,
-  extra?: { username?: string; phone?: string; organization?: string; role?: string }
-): Promise<User | 'exists' | 'error'> {
-  const result = await convex.action(api.auth.createVerifiedAccount, {
-    name: name.trim(),
-    email: email.toLowerCase().trim(),
-    password,
-    username: extra?.username,
-    phoneNumber: extra?.phone,
-    organizationName: extra?.organization,
-    roleInOrganization: extra?.role,
-  });
-  if ('error' in result) return result.error;
+  extra?: { phone?: string; organization?: string; role?: string; apiKeys?: ApiKey[] }
+): User | 'exists' {
+  const users = getUsers();
+  if (users.find((u) => u.email.toLowerCase() === email.toLowerCase())) return 'exists';
   const user: User = {
-    id: result.convexId,
-    convexUserId: result.convexId,
+    id: crypto.randomUUID(),
     name: name.trim(),
     email: email.toLowerCase().trim(),
-    username: extra?.username,
-    phone: extra?.phone,
-    organization: extra?.organization,
-    role: extra?.role,
-    apiKeys: [],
+    phone: extra?.phone || undefined,
+    organization: extra?.organization || undefined,
+    role: extra?.role || undefined,
+    apiKeys: extra?.apiKeys ?? [],
     preferences: {
       notifyEmail: true,
       notifyWorkflow: true,
@@ -140,77 +112,86 @@ export async function createAccount(
     },
     createdAt: new Date().toISOString(),
   };
+  const passwords: Record<string, string> = JSON.parse(
+    localStorage.getItem(PASSWORDS_KEY) || '{}'
+  );
+  passwords[user.email] = password;
+  localStorage.setItem(PASSWORDS_KEY, JSON.stringify(passwords));
+  users.push(user);
+  saveUsers(users);
   refreshSession(user);
   return user;
-}
-
-export async function changePassword(
-  email: string,
-  currentPassword: string,
-  newPassword: string,
-  convex: ConvexReactClient
-): Promise<boolean> {
-  return convex.action(api.auth.changePassword, {
-    email: email.toLowerCase().trim(),
-    currentPassword,
-    newPassword,
-  });
-}
-
-export async function resetPassword(
-  email: string,
-  code: string,
-  newPassword: string,
-  convex: ConvexReactClient
-): Promise<boolean> {
-  return convex.action(api.auth.resetPassword, {
-    email: email.toLowerCase().trim(),
-    code,
-    newPassword,
-  });
 }
 
 export function signOut(): void {
   localStorage.removeItem(SESSION_KEY);
 }
 
+export function resetPassword(email: string, newPassword: string): boolean {
+  const users = getUsers();
+  const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+  if (!user) return false;
+  const passwords: Record<string, string> = JSON.parse(
+    localStorage.getItem(PASSWORDS_KEY) || '{}'
+  );
+  passwords[user.email] = newPassword;
+  localStorage.setItem(PASSWORDS_KEY, JSON.stringify(passwords));
+  return true;
+}
+
+export function changePassword(email: string, currentPassword: string, newPassword: string): boolean {
+  const users = getUsers();
+  const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+  if (!user) return false;
+  const passwords: Record<string, string> = JSON.parse(
+    localStorage.getItem(PASSWORDS_KEY) || '{}'
+  );
+  if (passwords[user.email] !== currentPassword) return false;
+  passwords[user.email] = newPassword;
+  localStorage.setItem(PASSWORDS_KEY, JSON.stringify(passwords));
+  return true;
+}
+
 export function updateUser(
   userId: string,
   updates: Partial<Omit<User, 'id' | 'email' | 'createdAt'>>
 ): User | null {
+  const users = getUsers();
+  const idx = users.findIndex((u) => u.id === userId);
+  if (idx === -1) return null;
+  users[idx] = { ...users[idx], ...updates };
+  saveUsers(users);
   const session = getCurrentUser();
-  if (!session || session.id !== userId) return null;
-  const updated = { ...session, ...updates };
-  refreshSession(updated);
-  return updated;
+  if (session?.id === userId) refreshSession(users[idx]);
+  return users[idx];
 }
 
 export function addApiKey(userId: string, description: string, key: string): User | null {
-  const session = getCurrentUser();
-  if (!session || session.id !== userId) return null;
+  const users = getUsers();
+  const idx = users.findIndex((u) => u.id === userId);
+  if (idx === -1) return null;
   const newKey: ApiKey = {
     id: crypto.randomUUID(),
     description,
     key,
     createdAt: new Date().toISOString(),
   };
-  const updated = { ...session, apiKeys: [...(session.apiKeys ?? []), newKey] };
-  refreshSession(updated);
-  return updated;
+  users[idx].apiKeys = [...(users[idx].apiKeys ?? []), newKey];
+  saveUsers(users);
+  const session = getCurrentUser();
+  if (session?.id === userId) refreshSession(users[idx]);
+  return users[idx];
 }
 
 export function removeApiKey(userId: string, keyId: string): User | null {
+  const users = getUsers();
+  const idx = users.findIndex((u) => u.id === userId);
+  if (idx === -1) return null;
+  users[idx].apiKeys = (users[idx].apiKeys ?? []).filter((k) => k.id !== keyId);
+  saveUsers(users);
   const session = getCurrentUser();
-  if (!session || session.id !== userId) return null;
-  const updated = { ...session, apiKeys: (session.apiKeys ?? []).filter((k) => k.id !== keyId) };
-  refreshSession(updated);
-  return updated;
-}
-
-export function setConvexUserId(localUserId: string, convexUserId: string): void {
-  const session = getCurrentUser();
-  if (!session || session.id !== localUserId) return;
-  refreshSession({ ...session, convexUserId });
+  if (session?.id === userId) refreshSession(users[idx]);
+  return users[idx];
 }
 
 export function getUserWorkflows(userId: string): Workflow[] {
@@ -302,4 +283,14 @@ export function purgeExpiredWorkflows(): void {
   if (kept.length !== trash.length) {
     localStorage.setItem(TRASH_KEY, JSON.stringify(kept));
   }
+}
+
+export function setConvexUserId(localUserId: string, convexUserId: string): void {
+  const users = getUsers();
+  const idx = users.findIndex((u) => u.id === localUserId);
+  if (idx === -1) return;
+  users[idx] = { ...users[idx], convexUserId };
+  saveUsers(users);
+  const session = getCurrentUser();
+  if (session?.id === localUserId) refreshSession(users[idx]);
 }

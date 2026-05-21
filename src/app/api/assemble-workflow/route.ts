@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../../../convex/_generated/api';
-import type { Id } from '../../../../convex/_generated/dataModel';
+import type { Id } from 'convex/values';
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 const PYTHON_API = process.env.PYTHON_API_URL ?? 'http://127.0.0.1:8001';
@@ -20,8 +20,6 @@ function cellSource(raw: string | string[]): string {
 }
 
 async function runAssembly(intake: unknown, workflowId: string): Promise<void> {
-  const id = workflowId as Id<'workflows'>;
-
   const pyRes = await fetch(`${PYTHON_API}/assemble`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -33,8 +31,10 @@ async function runAssembly(intake: unknown, workflowId: string): Promise<void> {
     throw new Error(`Agent returned ${pyRes.status}: ${detail}`);
   }
 
+  // 1. Added "packages: string[]" to the Python response type definition
   const pyData = (await pyRes.json()) as {
     cells: RawCell[];
+    packages: string[]; // <-- Added this
     sourceNotebooks: SourceNotebook[];
   };
 
@@ -49,8 +49,13 @@ async function runAssembly(intake: unknown, workflowId: string): Promise<void> {
     content: s.content ?? '',
   }));
 
-  await convex.mutation(api.workflows.updateWorkflow, { id, notebookCells, sourceNotebooks });
-  await convex.mutation(api.workflows.updateWorkflowStatus, { id, assemblyStatus: 'ready' });
+  // 2. Added "packages" into the Convex mutation payload
+  await convex.mutation(api.workflows.updateWorkflow, {
+    id: workflowId as Id<'workflows'>,
+    notebookCells,
+    sourceNotebooks,
+    packages: pyData.packages ?? [], // <-- Added this
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -61,23 +66,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'intake and workflowId required' }, { status: 400 });
   }
 
-  const id = workflowId as Id<'workflows'>;
-
-  // Mark as pending immediately so the status persists across page refreshes
-  await convex.mutation(api.workflows.updateWorkflowStatus, {
-    id,
-    assemblyStatus: 'pending',
-  });
-
-  // Assembly runs in the background; status updates flow via Convex reactive query
-  runAssembly(intake, workflowId).catch(async (e: unknown) => {
-    const msg = e instanceof Error ? e.message : String(e);
-    await convex.mutation(api.workflows.updateWorkflowStatus, {
-      id,
-      assemblyStatus: 'error',
-      assemblyError: msg,
-    }).catch(() => {});
-  });
+  // Return immediately — assembly runs in the background.
+  // The workflow page loading state is driven by Convex's reactive notebookCells query,
+  // so it updates automatically when runAssembly writes to Convex.
+  runAssembly(intake, workflowId).catch((e) =>
+    console.error('[assemble-workflow] background error:', e),
+  );
 
   return NextResponse.json({ ok: true, status: 'assembling' });
 }

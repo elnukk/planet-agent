@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { useConvex } from 'convex/react';
-import { signIn, createAccount, getCurrentUser, resetPassword } from '@/lib/auth';
+import { useMutation, useConvex } from 'convex/react';
+import { api } from '../../convex/_generated/api';
+import { signIn, createAccount, getCurrentUser, resetPassword, setConvexUserId } from '@/lib/auth';
 
 import loginBg from './dashboard/loginbackground.png';
 import planetLogo from './dashboard/planetlogo.png';
@@ -15,49 +16,26 @@ type Mode = 'login' | 'signup';
 
 // ─── Forgot-password modal ────────────────────────────────────────────────────
 function ForgotPasswordModal({ onClose }: { onClose: () => void }) {
-  const convex = useConvex();
   const [step, setStep] = useState<'email' | 'reset' | 'done'>('email');
   const [email, setEmail] = useState('');
-  const [code, setCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [devCode, setDevCode] = useState<string | null>(null);
 
-  async function handleEmailSubmit(e: React.FormEvent) {
+  function handleEmailSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
-    setLoading(true);
-    try {
-      const res = await fetch('/api/send-verification', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.toLowerCase().trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok) { setError('Failed to send code. Please try again.'); return; }
-      if (data.devCode) setDevCode(data.devCode);
-      setStep('reset');
-    } finally {
-      setLoading(false);
-    }
+    setStep('reset');
   }
 
-  async function handleReset(e: React.FormEvent) {
+  function handleReset(e: React.FormEvent) {
     e.preventDefault();
     setError('');
-    if (code.length < 6) { setError('Please enter the 6-digit code.'); return; }
     if (newPassword.length < 6) { setError('Password must be at least 6 characters.'); return; }
     if (newPassword !== confirm) { setError('Passwords do not match.'); return; }
-    setLoading(true);
-    try {
-      const ok = await resetPassword(email.toLowerCase().trim(), code, newPassword, convex);
-      if (!ok) { setError('Invalid or expired code, or no account found for that email.'); return; }
-      setStep('done');
-    } finally {
-      setLoading(false);
-    }
+    const ok = resetPassword(email, newPassword);
+    if (!ok) { setError('No account found with that email.'); setStep('email'); return; }
+    setStep('done');
   }
 
   return (
@@ -89,7 +67,7 @@ function ForgotPasswordModal({ onClose }: { onClose: () => void }) {
         ) : step === 'email' ? (
           <>
             <h2 className="text-lg font-bold text-gray-900 mb-1">Forgot password?</h2>
-            <p className="text-sm text-gray-500 mb-5">Enter your email and we&apos;ll send you a reset code.</p>
+            <p className="text-sm text-gray-500 mb-5">Enter your email and we&apos;ll let you set a new password.</p>
             <form onSubmit={handleEmailSubmit} className="space-y-3">
               <input
                 type="email"
@@ -105,40 +83,25 @@ function ForgotPasswordModal({ onClose }: { onClose: () => void }) {
                   className="flex-1 py-2.5 rounded-full text-sm font-medium text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors">
                   Cancel
                 </button>
-                <button type="submit" disabled={!email.trim() || loading}
+                <button type="submit" disabled={!email.trim()}
                   className="flex-1 py-2.5 rounded-full text-sm font-semibold text-white disabled:opacity-50 transition-colors"
                   style={{ backgroundColor: TEAL }}>
-                  {loading ? 'Sending…' : 'Send Code'}
+                  Continue
                 </button>
               </div>
             </form>
           </>
         ) : (
           <>
-            <h2 className="text-lg font-bold text-gray-900 mb-1">Reset your password</h2>
-            <p className="text-sm text-gray-500 mb-4">Enter the code sent to <span className="font-medium text-gray-700">{email}</span> and choose a new password.</p>
-            {devCode && (
-              <div className="mb-4 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-center">
-                <p className="text-xs text-amber-700 font-medium mb-1">Dev mode — code</p>
-                <p className="text-lg font-mono font-bold text-amber-800 tracking-widest">{devCode}</p>
-              </div>
-            )}
+            <h2 className="text-lg font-bold text-gray-900 mb-1">Set new password</h2>
+            <p className="text-sm text-gray-500 mb-5">Choose a new password for <span className="font-medium text-gray-700">{email}</span>.</p>
             <form onSubmit={handleReset} className="space-y-3">
-              <input
-                type="text"
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                required
-                placeholder="6-digit code"
-                inputMode="numeric"
-                className="w-full px-4 py-3 border border-gray-200 rounded-full text-sm placeholder-gray-400 focus:outline-none focus:ring-2 transition text-center tracking-widest font-mono"
-              />
               <input
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 required
-                placeholder="New password (min 6 characters)"
+                placeholder="New password"
                 className="w-full px-4 py-3 border border-gray-200 rounded-full text-sm placeholder-gray-400 focus:outline-none focus:ring-2 transition"
               />
               <input
@@ -155,10 +118,10 @@ function ForgotPasswordModal({ onClose }: { onClose: () => void }) {
                   className="flex-1 py-2.5 rounded-full text-sm font-medium text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors">
                   Back
                 </button>
-                <button type="submit" disabled={!code || !newPassword || !confirm || loading}
+                <button type="submit" disabled={!newPassword || !confirm}
                   className="flex-1 py-2.5 rounded-full text-sm font-semibold text-white disabled:opacity-50 transition-colors"
                   style={{ backgroundColor: TEAL }}>
-                  {loading ? 'Resetting…' : 'Reset Password'}
+                  Reset Password
                 </button>
               </div>
             </form>
@@ -175,6 +138,7 @@ const INPUT = 'w-full px-4 py-3 border border-gray-200 rounded-full text-sm plac
 export default function AuthPage() {
   const router = useRouter();
   const convex = useConvex();
+  const createUser = useMutation(api.users.createUser);
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<Mode>('login');
 
@@ -190,8 +154,12 @@ export default function AuthPage() {
   const [confirmEmail, setConfirmEmail] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [phone, setPhone] = useState('');
+  const [confirmPhone, setConfirmPhone] = useState('');
   const [organization, setOrganization] = useState('');
   const [orgRole, setOrgRole] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [apiKeyDesc, setApiKeyDesc] = useState('');
+  const [apiKeyValue, setApiKeyValue] = useState('');
 
   useEffect(() => {
     setMounted(true);
@@ -207,8 +175,12 @@ export default function AuthPage() {
     setConfirmEmail('');
     setConfirmPassword('');
     setPhone('');
+    setConfirmPhone('');
     setOrganization('');
     setOrgRole('');
+    setApiKeyDesc('');
+    setApiKeyValue('');
+    setShowApiKey(false);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -217,23 +189,39 @@ export default function AuthPage() {
     setLoading(true);
     try {
       if (mode === 'login') {
-        const user = await signIn(email, password, convex);
+        const user = signIn(email, password);
         if (!user) { setError('Incorrect email or password.'); return; }
+        if (!user.convexUserId) {
+          const convexUser = await convex.query(api.users.getUserByEmail, { email: email.toLowerCase().trim() });
+          if (convexUser) {
+            setConvexUserId(user.id, convexUser._id as string);
+          } else {
+            const convexId = await createUser({
+              name: user.name,
+              email: email.toLowerCase().trim(),
+            });
+            setConvexUserId(user.id, convexId as string);
+          }
+        }
         router.push('/dashboard');
       } else {
-        // Validate required fields
         if (!name.trim()) { setError('Please enter your full name.'); return; }
         if (confirmEmail.toLowerCase() !== email.toLowerCase()) { setError('Email addresses do not match.'); return; }
         if (password.length < 6) { setError('Password must be at least 6 characters.'); return; }
         if (password !== confirmPassword) { setError('Passwords do not match.'); return; }
-
-        const result = await createAccount(name, email, password, convex, {
+        if (phone && phone !== confirmPhone) { setError('Phone numbers do not match.'); return; }
+        const apiKeys = (showApiKey && apiKeyDesc.trim() && apiKeyValue.trim())
+          ? [{ id: crypto.randomUUID(), description: apiKeyDesc.trim(), key: apiKeyValue.trim(), createdAt: new Date().toISOString() }]
+          : [];
+        const result = createAccount(name, email, password, {
           phone: phone.trim() || undefined,
           organization: organization.trim() || undefined,
           role: orgRole.trim() || undefined,
+          apiKeys,
         });
         if (result === 'exists') { setError('An account with this email already exists.'); return; }
-        if (result === 'error') { setError('Failed to create account. Please try again.'); return; }
+        const convexId = await createUser({ name: name.trim(), email: email.toLowerCase().trim() });
+        setConvexUserId(result.id, convexId as string);
         router.push('/dashboard');
       }
     } finally {
@@ -249,7 +237,7 @@ export default function AuthPage() {
       {/* Top bar */}
       <header className="flex items-center h-20 bg-black flex-shrink-0 relative">
         <div className="relative h-20 w-20 flex-shrink-0 ml-2">
-          <Image src={planetLogo} alt="Planet logo" fill sizes="80px" className="object-contain" />
+          <Image src={planetLogo} alt="Planet logo" fill className="object-contain" />
         </div>
         <span className="absolute inset-0 flex items-center justify-center text-2xl font-bold tracking-wide text-white pointer-events-none">
           Project Centinela
@@ -262,11 +250,10 @@ export default function AuthPage() {
         className={`flex-1 relative flex justify-center ${isSignup ? 'items-start py-10' : 'items-center'}`}
         style={{ minHeight: 520 }}
       >
-        <Image src={loginBg} alt="Satellite view" fill sizes="100vw" className="object-cover" priority />
+        <Image src={loginBg} alt="Satellite view" fill className="object-cover" priority />
         <div className="absolute inset-0 bg-black/25" />
 
         <div className={`relative z-10 bg-white rounded-2xl shadow-2xl w-full mx-4 ${isSignup ? 'max-w-md' : 'max-w-sm'} p-8`}>
-
           <h1 className="text-3xl font-bold text-center text-gray-900 mb-0.5">Welcome!</h1>
           <p className="text-center text-base font-semibold mb-6" style={{ color: TEAL }}>
             {mounted ? (mode === 'login' ? 'Login' : 'Create your account') : 'Login'}
@@ -277,12 +264,10 @@ export default function AuthPage() {
             {/* ── Signup-only fields ── */}
             {isSignup && (
               <>
-                <SectionLabel required>Personal Information</SectionLabel>
+                <SectionLabel>Personal Information</SectionLabel>
 
                 <input type="text" value={name} onChange={(e) => setName(e.target.value)}
                   required placeholder="Full name" className={INPUT} />
-
-                <SectionLabel required>Email</SectionLabel>
 
                 <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
                   required placeholder="Email address" className={INPUT} />
@@ -290,26 +275,57 @@ export default function AuthPage() {
                 <input type="email" value={confirmEmail} onChange={(e) => setConfirmEmail(e.target.value)}
                   required placeholder="Confirm email address" className={INPUT} />
 
-                <SectionLabel required>Password</SectionLabel>
-
                 <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
                   required placeholder="Password (min 6 characters)" className={INPUT} />
 
                 <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
                   required placeholder="Confirm password" className={INPUT} />
 
-                <SectionLabel>Contact <OptLabel /></SectionLabel>
+                <SectionLabel>Contact</SectionLabel>
 
                 <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
-                  placeholder="Phone number" className={INPUT} />
+                  placeholder="Phone number (optional)" className={INPUT} />
 
-                <SectionLabel>Organization <OptLabel /></SectionLabel>
+                {phone.trim() && (
+                  <input type="tel" value={confirmPhone} onChange={(e) => setConfirmPhone(e.target.value)}
+                    placeholder="Confirm phone number" className={INPUT} />
+                )}
+
+                <SectionLabel>Organization</SectionLabel>
 
                 <input type="text" value={organization} onChange={(e) => setOrganization(e.target.value)}
-                  placeholder="Community organization" className={INPUT} />
+                  placeholder="Community organization (optional)" className={INPUT} />
 
                 <input type="text" value={orgRole} onChange={(e) => setOrgRole(e.target.value)}
-                  placeholder="Your role in organization" className={INPUT} />
+                  placeholder="Your role in organization (optional)" className={INPUT} />
+
+                <SectionLabel>API Key</SectionLabel>
+
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKey((v) => !v)}
+                    className="flex items-center gap-2 text-sm font-medium transition-colors"
+                    style={{ color: TEAL }}
+                  >
+                    <svg
+                      className={`w-4 h-4 transition-transform duration-200 ${showApiKey ? 'rotate-90' : ''}`}
+                      fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                    {showApiKey ? 'Hide API key fields' : 'Add an API key (optional)'}
+                  </button>
+
+                  {showApiKey && (
+                    <div className="mt-3 space-y-2 pl-2 border-l-2 border-gray-100">
+                      <input type="text" value={apiKeyDesc} onChange={(e) => setApiKeyDesc(e.target.value)}
+                        placeholder="Key description (e.g. Planet API)" className={INPUT} />
+                      <input type="text" value={apiKeyValue} onChange={(e) => setApiKeyValue(e.target.value)}
+                        placeholder="API key value" className={INPUT} />
+                    </div>
+                  )}
+                </div>
               </>
             )}
 
@@ -342,9 +358,7 @@ export default function AuthPage() {
               className="w-full py-3 rounded-full text-white text-sm font-semibold disabled:opacity-60 hover:opacity-90 transition-opacity mt-2"
               style={{ backgroundColor: TEAL }}
             >
-              {loading
-                ? (mode === 'signup' ? 'Creating account…' : 'Please wait…')
-                : (mode === 'login' ? 'Sign In' : 'Create Account')}
+              {loading ? 'Please wait…' : (mode === 'login' ? 'Sign In' : 'Create Account')}
             </button>
           </form>
 
@@ -366,15 +380,10 @@ export default function AuthPage() {
   );
 }
 
-function SectionLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
+function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <p className="text-xs font-bold text-gray-400 uppercase tracking-widest pt-2 pb-0.5">
       {children}
-      {required && <span className="text-red-400 normal-case font-normal tracking-normal ml-1">*required</span>}
     </p>
   );
-}
-
-function OptLabel() {
-  return <span className="text-gray-300 normal-case font-normal tracking-normal">(optional)</span>;
 }

@@ -8,10 +8,8 @@
  * @module
  */
 
-import type * as auth from "../auth.js";
 import type * as conversations from "../conversations.js";
 import type * as users from "../users.js";
-import type * as verificationCodes from "../verificationCodes.js";
 import type * as workflows from "../workflows.js";
 
 import type {
@@ -21,10 +19,8 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  auth: typeof auth;
   conversations: typeof conversations;
   users: typeof users;
-  verificationCodes: typeof verificationCodes;
   workflows: typeof workflows;
 }>;
 

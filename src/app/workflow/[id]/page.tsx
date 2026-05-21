@@ -8,6 +8,7 @@ import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import planetLogo from '../../dashboard/planetlogo.png';
 import { type IntakeJSON } from '@/lib/workflowIntake';
+import { getCurrentUser } from '@/lib/auth';
 
 const TEAL = '#009DA5';
 
@@ -18,6 +19,52 @@ interface Cell {
   type: CellType;
   source: string;
   output?: string;
+  stderr?: string;
+  isRunning?: boolean;
+}
+
+function buildIpynb(cells: Array<{ cellType: string; source: string }>) {
+  return {
+    nbformat: 4,
+    nbformat_minor: 5,
+    metadata: {
+      kernelspec: { display_name: 'Python 3', language: 'python', name: 'python3' },
+      language_info: { name: 'python', version: '3.10.0' },
+    },
+    cells: cells.map((cell) => {
+      const lines = cell.source.split('\n');
+      const source = lines.map((line, i) => (i < lines.length - 1 ? line + '\n' : line));
+      if (cell.cellType === 'code') {
+        return { cell_type: 'code', execution_count: null, metadata: {}, outputs: [], source };
+      }
+      return { cell_type: 'markdown', metadata: {}, source };
+    }),
+  };
+}
+
+function downloadNotebook(cells: Array<{ cellType: string; source: string }>, name: string) {
+  const json = JSON.stringify(buildIpynb(cells), null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${name.replace(/\s+/g, '_').toLowerCase()}.ipynb`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function openInColab(cells: Array<{ cellType: string; source: string }>, name: string) {
+  const res = await fetch('/api/create-gist', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cells, name }),
+  });
+  if (!res.ok) {
+    alert('Failed to create Gist. Make sure GITHUB_TOKEN is set in .env.local.');
+    return;
+  }
+  const { url } = await res.json() as { url: string };
+  window.open(url, '_blank');
 }
 
 function fromConvexCells(
@@ -30,13 +77,6 @@ function fromConvexCells(
   }));
 }
 
-const BOT_REPLIES = [
-  'I can help you refine the analysis parameters. What would you like to adjust?',
-  'Based on your intake, I can suggest additional preprocessing steps. Would you like me to add them?',
-  'You can narrow the AOI or extend the date range. Would you like me to regenerate the workflow cells?',
-  'Happy to add a cloud-masking step — cloud cover is a common source of false positives.',
-  'The constraints from your intake have been factored into the workflow structure.',
-];
 
 interface ConvexMessage {
   _id: string;
@@ -92,17 +132,10 @@ function MarkdownCell({ source }: { source: string }) {
 }
 
 function CodeCell({
-  cell, showCode, ran, onRun, hasApiKey, onMissingKey,
+  cell, showCode, ran, onRun,
 }: {
-  cell: Cell; showCode: boolean; ran: boolean;
-  onRun: (id: string) => void;
-  hasApiKey: boolean;
-  onMissingKey: () => void;
+  cell: Cell; showCode: boolean; ran: boolean; onRun: (id: string) => void;
 }) {
-  function handleRun() {
-    if (!hasApiKey) { onMissingKey(); return; }
-    onRun(cell.id);
-  }
   return (
     <div className="rounded-xl overflow-hidden border border-gray-200">
       {showCode && (
@@ -110,11 +143,12 @@ function CodeCell({
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs text-gray-400 font-mono">Python</span>
             <button
-              onClick={handleRun}
-              className="text-xs text-white font-medium px-3 py-1 rounded-full transition-colors"
+              onClick={() => onRun(cell.id)}
+              disabled={cell.isRunning}
+              className="text-xs text-white font-medium px-3 py-1 rounded-full transition-colors disabled:opacity-50"
               style={{ backgroundColor: TEAL }}
             >
-              ▶ Run
+              {cell.isRunning ? 'Running…' : '▶ Run'}
             </button>
           </div>
           <pre className="text-sm font-mono text-gray-100 leading-relaxed overflow-x-auto whitespace-pre-wrap">
@@ -128,10 +162,10 @@ function CodeCell({
           <pre className="text-sm font-mono text-gray-800 whitespace-pre-wrap">{cell.output}</pre>
         </div>
       )}
-      {!showCode && ran && cell.output && (
-        <div className="bg-gray-50 px-4 py-3">
-          <span className="text-xs text-gray-400 font-mono block mb-1">Output:</span>
-          <pre className="text-sm font-mono text-gray-800 whitespace-pre-wrap">{cell.output}</pre>
+      {ran && cell.stderr && (
+        <div className="bg-red-50 border-t border-red-200 px-4 py-3">
+          <span className="text-xs text-red-400 font-mono block mb-1">Error:</span>
+          <pre className="text-sm font-mono text-red-800 whitespace-pre-wrap">{cell.stderr}</pre>
         </div>
       )}
     </div>
@@ -156,7 +190,7 @@ function IntakeSummaryCard({ intake }: { intake: IntakeJSON }) {
           </div>
         ) : null
       )}
-      {intake.constraints?.length > 0 && (
+      {intake.constraints && intake.constraints.length > 0 && (
         <div className="col-span-2 sm:col-span-3">
           <span className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Constraints</span>
           <div className="flex flex-wrap gap-1.5">
@@ -172,18 +206,7 @@ function IntakeSummaryCard({ intake }: { intake: IntakeJSON }) {
   );
 }
 
-function ChatPanel({
-  workflowId, intake, planetApiKey, onClose,
-}: {
-  workflowId: string;
-  intake: IntakeJSON | null;
-  planetApiKey: string;
-  onClose: () => void;
-}) {
-  const context = intake
-    ? `Use case: ${intake.use_case}. Region: ${intake.region?.description}. Product: ${intake.planet_product}. Intent: ${intake.inferred_intent}.`
-    : '';
-
+function ChatPanel({ workflowId, intake, apiKeyValue, notebookCells, onClose }: { workflowId: string; intake: IntakeJSON | null; apiKeyValue: string | null; notebookCells: Array<{ cellType: string; source: string }>; onClose: () => void }) {
   const convexMessages = useQuery(
     api.conversations.getConversation,
     { workflowId: workflowId as Id<'workflows'> },
@@ -192,7 +215,6 @@ function ChatPanel({
   const sendMessage = useMutation(api.conversations.sendMessage);
 
   const [input, setInput] = useState('');
-  const [replyIdx, setReplyIdx] = useState(0);
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -212,20 +234,13 @@ function ChatPanel({
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: text,
-          context,
-          hasApiKey: !!planetApiKey,
-        }),
+        body: JSON.stringify({ workflowId, message: text, notebookCells, planetApiKey: apiKeyValue ?? undefined }),
       });
-      const data = await res.json();
-      const reply = data.reply || BOT_REPLIES[replyIdx % BOT_REPLIES.length];
+      const data = await res.json() as { reply?: string; error?: string };
+      const reply = data.reply || data.error || 'Something went wrong. Please try again.';
       await sendMessage({ workflowId: workflowId as Id<'workflows'>, role: 'assistant', content: reply });
-      setReplyIdx((i) => i + 1);
     } catch {
-      const reply = BOT_REPLIES[replyIdx % BOT_REPLIES.length];
-      await sendMessage({ workflowId: workflowId as Id<'workflows'>, role: 'assistant', content: reply });
-      setReplyIdx((i) => i + 1);
+      await sendMessage({ workflowId: workflowId as Id<'workflows'>, role: 'assistant', content: 'Network error — could not reach the assistant.' });
     } finally {
       setLoading(false);
     }
@@ -299,7 +314,6 @@ function ChatPanel({
 
 export default function WorkflowPage() {
   const params = useParams();
-  const router = useRouter();
   const workflowId = params?.id as string;
 
   const workflowData = useQuery(
@@ -307,12 +321,12 @@ export default function WorkflowPage() {
     workflowId ? { id: workflowId as Id<'workflows'> } : 'skip',
   );
 
-  // Fetch the workflow owner's Planet API key
-  const userData = useQuery(
+  const localUser = getCurrentUser();
+  const convexUserData = useQuery(
     api.users.getUser,
-    workflowData?.userId ? { id: workflowData.userId } : 'skip',
+    localUser?.convexUserId ? { id: localUser.convexUserId as Id<'users'> } : 'skip',
   );
-  const planetApiKey = userData?.apiKeys?.[0]?.value ?? userData?.apiKeyValue ?? '';
+  const apiKeyValue = convexUserData?.apiKeyValue ?? null;
 
   const intake: IntakeJSON | null = workflowData
     ? {
@@ -327,21 +341,25 @@ export default function WorkflowPage() {
       }
     : null;
 
-  const workflowName = workflowData?.name ?? workflowData?.useCase ?? 'Workflow';
+  const workflowName = workflowData?.useCase ?? 'Workflow';
 
   const [showCode, setShowCode] = useState(true);
   const [ranCells, setRanCells] = useState<Set<string>>(new Set());
   const [runningAll, setRunningAll] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
-  const [showKeyBanner, setShowKeyBanner] = useState(false);
-  const fetchTriggered = useRef(false);
+  const [assembleError, setAssembleError] = useState<string | null>(null);
+  const [timedOut, setTimedOut] = useState(false);
+  const assembleTriggered = useRef(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const assemblyStatus = workflowData?.assemblyStatus;
-  const assemblyError = workflowData?.assemblyError ?? null;
+  // Dynamic execution state storage for streaming stdout, stderr, and component spins
+  const [cellOutputs, setCellOutputs] = useState<Record<string, { output?: string; stderr?: string; isRunning?: boolean }>>({});
 
-  async function triggerAssembly(wd: NonNullable<typeof workflowData>) {
-    if (fetchTriggered.current) return;
-    fetchTriggered.current = true;
+  function triggerAssembly(wd: NonNullable<typeof workflowData>) {
+    if (assembleTriggered.current) return;
+    assembleTriggered.current = true;
+    setAssembleError(null);
+    setTimedOut(false);
 
     const intakeForAgent = {
       region: wd.region,
@@ -352,50 +370,114 @@ export default function WorkflowPage() {
       user_description: wd.userDescription ?? '',
       inferred_intent: wd.inferredIntent ?? '',
       constraints: wd.constraints ?? [],
+      available_env_vars: apiKeyValue ? ['PL_API_KEY', 'PLANET_API_KEY'] : [],
     };
 
-    await fetch('/api/assemble-workflow', {
+    fetch('/api/assemble-workflow', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ intake: intakeForAgent, workflowId }),
-    });
+    }).catch((e: unknown) => setAssembleError(String(e)));
+
+    timeoutRef.current = setTimeout(() => setTimedOut(true), 10 * 60 * 1000);
   }
 
   useEffect(() => {
     if (!workflowId || workflowData === undefined || workflowData === null) return;
-    // Only trigger if no status has been set yet (brand-new workflow)
-    if (!workflowData.assemblyStatus && workflowData.notebookCells.length === 0) {
-      triggerAssembly(workflowData);
+    if (workflowData.notebookCells.length > 0) {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      return;
     }
+    triggerAssembly(workflowData);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workflowId, workflowData?.assemblyStatus]);
+  }, [workflowData, workflowId]);
 
-  async function retryAssembly() {
+  function retryAssembly() {
     if (!workflowData) return;
-    fetchTriggered.current = false;
-    await triggerAssembly(workflowData);
+    assembleTriggered.current = false;
+    setTimedOut(false);
+    setAssembleError(null);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    triggerAssembly(workflowData);
   }
 
   const convexCells = workflowData?.notebookCells ?? [];
-  const hasRealCells = assemblyStatus === 'ready' && convexCells.length > 0;
-  const cells: Cell[] = hasRealCells ? fromConvexCells(convexCells) : [];
+  const hasRealCells = convexCells.length > 0;
+  
+  // Combine native Convex static structures with dynamic execution outputs
+  const cells: Cell[] = hasRealCells
+    ? fromConvexCells(convexCells).map((cell) => ({
+        ...cell,
+        output: cellOutputs[cell.id]?.output,
+        stderr: cellOutputs[cell.id]?.stderr,
+        isRunning: cellOutputs[cell.id]?.isRunning,
+      }))
+    : [];
 
-  function handleMissingKey() {
-    setShowKeyBanner(true);
-  }
+  const [showApiKeyPrompt, setShowApiKeyPrompt] = useState(false);
 
-  function runCell(id: string) {
-    if (!planetApiKey) { handleMissingKey(); return; }
-    setRanCells((prev) => new Set([...prev, id]));
+  async function runCell(id: string) {
+    const targetCell = cells.find((c) => c.id === id);
+    if (!targetCell) return;
+
+    if (!apiKeyValue) {
+      setShowApiKeyPrompt(true);
+      return;
+    }
+
+    setCellOutputs((prev) => ({ ...prev, [id]: { isRunning: true } }));
+
+    // Prepend all preceding code cells so each cell runs with full context
+    const codeCells = cells.filter((c) => c.type === 'code');
+    const targetIndex = codeCells.findIndex((c) => c.id === id);
+    const precedingCells = codeCells.slice(0, targetIndex);
+    const code = precedingCells.length > 0
+      ? `${precedingCells.map((c) => c.source).join('\n\n')}\n\n${targetCell.source}`
+      : targetCell.source;
+
+    try {
+      const response = await fetch('/api/run-cell', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code,
+          packages: workflowData?.packages ?? [],
+          planetApiKey: apiKeyValue,
+        }),
+      });
+
+      const resData = await response.json();
+
+      setCellOutputs((prev) => ({
+        ...prev,
+        [id]: {
+          output: resData.stdout || undefined,
+          stderr: resData.stderr || (!response.ok ? (resData.error ?? 'Sandbox error — check that E2B_API_KEY is set.') : undefined),
+          isRunning: false,
+        },
+      }));
+      setRanCells((prev) => new Set([...prev, id]));
+    } catch {
+      setCellOutputs((prev) => ({
+        ...prev,
+        [id]: {
+          stderr: 'Network error or execution timeout occurred.',
+          isRunning: false,
+        },
+      }));
+      setRanCells((prev) => new Set([...prev, id]));
+    }
   }
 
   async function runAll() {
-    if (!planetApiKey) { handleMissingKey(); return; }
+    if (!apiKeyValue) {
+      setShowApiKeyPrompt(true);
+      return;
+    }
     setRunningAll(true);
     const codeCells = cells.filter((c) => c.type === 'code');
     for (const cell of codeCells) {
-      await new Promise((r) => setTimeout(r, 400));
-      setRanCells((prev) => new Set([...prev, cell.id]));
+      await runCell(cell.id);
     }
     setRunningAll(false);
   }
@@ -436,42 +518,39 @@ export default function WorkflowPage() {
           {showCode ? 'Hide Code' : 'View Code'}
         </button>
 
+        {hasRealCells && (
+          <>
+            <button
+              onClick={() => downloadNotebook(convexCells, workflowName)}
+              className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold border transition-colors"
+              style={{ borderColor: TEAL, color: TEAL }}
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              Download .ipynb
+            </button>
+            <button
+              onClick={() => { if (!apiKeyValue) { setShowApiKeyPrompt(true); return; } openInColab(convexCells, workflowName); }}
+              className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold border transition-colors"
+              style={{ borderColor: '#F9AB00', color: '#F9AB00' }}
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/>
+              </svg>
+              Open in Colab
+            </button>
+          </>
+        )}
+
         <span className="text-xs text-gray-400 ml-auto">
           {hasRealCells
             ? `${ranCells.size}/${cells.filter((c) => c.type === 'code').length} cells run`
-            : assemblyStatus === 'pending' ? 'Building…' : '—'}
+            : assembleTriggered.current ? 'Building…' : '—'}
         </span>
       </div>
 
       <main className="flex-1 max-w-4xl mx-auto w-full px-6 py-8 space-y-4 pb-28">
-
-        {/* Missing API key banner */}
-        {showKeyBanner && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 flex items-start justify-between gap-4">
-            <div>
-              <p className="text-sm font-semibold text-amber-800">Planet API key required to run cells</p>
-              <p className="text-xs text-amber-600 mt-1">
-                Add your Planet API key on the{' '}
-                <button
-                  onClick={() => router.push('/profile')}
-                  className="underline font-medium"
-                >
-                  profile page
-                </button>
-                {' '}to execute this workflow.
-              </p>
-            </div>
-            <button
-              onClick={() => setShowKeyBanner(false)}
-              className="flex-shrink-0 text-amber-400 hover:text-amber-600 transition-colors"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        )}
-
         <div className="bg-gray-100 rounded-2xl px-6 py-5">
           <h1 className="text-xl font-bold text-gray-900 mb-1">{workflowName}</h1>
           {intake ? (
@@ -488,7 +567,7 @@ export default function WorkflowPage() {
           )}
         </div>
 
-        {assemblyStatus === 'pending' && (
+        {!hasRealCells && workflowData !== undefined && workflowData !== null && !assembleError && !timedOut && (
           <div className="rounded-xl border border-teal-100 bg-teal-50 px-5 py-4 flex items-center gap-4">
             <div
               className="w-5 h-5 rounded-full border-2 border-t-transparent flex-shrink-0 animate-spin"
@@ -497,18 +576,20 @@ export default function WorkflowPage() {
             <div>
               <p className="text-sm font-semibold text-teal-800">Building your workflow…</p>
               <p className="text-xs text-teal-600 mt-0.5">
-                The agent is searching notebooks and assembling analysis steps. This may take a few minutes — you can safely refresh this page.
+                The agent is searching notebooks and assembling analysis steps. This may take a few minutes — please do not close this tab.
               </p>
             </div>
           </div>
         )}
 
-        {assemblyStatus === 'error' && (
+        {(assembleError || timedOut) && !hasRealCells && (
           <div className="rounded-xl border border-red-100 bg-red-50 px-5 py-4 flex items-start justify-between gap-4">
             <div>
-              <p className="text-sm font-semibold text-red-700">Assembly failed</p>
+              <p className="text-sm font-semibold text-red-700">
+                {timedOut ? 'Assembly is taking longer than expected' : 'Failed to reach the agent'}
+              </p>
               <p className="text-xs text-red-500 mt-1 font-mono">
-                {assemblyError ?? 'Make sure the Python server is running: python knowledge-base/api_server.py'}
+                {assembleError ?? 'Make sure the Python server is running: python knowledge-base/api_server.py'}
               </p>
             </div>
             <button
@@ -531,8 +612,6 @@ export default function WorkflowPage() {
               showCode={showCode}
               ran={ranCells.has(cell.id)}
               onRun={runCell}
-              hasApiKey={!!planetApiKey}
-              onMissingKey={handleMissingKey}
             />
           )
         )}
@@ -556,12 +635,46 @@ export default function WorkflowPage() {
       </button>
 
       {chatOpen && workflowId && (
-        <ChatPanel
-          workflowId={workflowId}
-          intake={intake}
-          planetApiKey={planetApiKey}
-          onClose={() => setChatOpen(false)}
-        />
+        <ChatPanel workflowId={workflowId} intake={intake} apiKeyValue={apiKeyValue} notebookCells={convexCells} onClose={() => setChatOpen(false)} />
+      )}
+
+      {showApiKeyPrompt && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+          onClick={() => setShowApiKeyPrompt(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#e0f7f8' }}>
+                <svg className="w-5 h-5" style={{ color: TEAL }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 0 1 21.75 8.25Z" />
+                </svg>
+              </div>
+              <h2 className="text-base font-bold text-gray-900">Planet API Key Required</h2>
+            </div>
+            <p className="text-sm text-gray-500 mb-5 leading-relaxed">
+              A Planet API key is needed to run this workflow. Add your key on the Profile page and come back to run the analysis.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowApiKeyPrompt(false)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-medium text-gray-600 border border-gray-200 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { window.location.href = '/profile'; }}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors"
+                style={{ backgroundColor: TEAL }}
+              >
+                Go to Profile
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -1,3 +1,11 @@
+// convex/workflows.ts
+// PURPOSE: Convex query and mutation functions for saving and retrieving workflows.
+// CONNECTS TO:
+//   - schema.ts for the workflows table definition
+//   - src/lib/agent/planner.ts calls these in M2 to save assembled workflows
+//   - src/app/dashboard/page.tsx reads from here to list saved workflows
+//   - src/app/workflow/[id]/page.tsx reads from here to load a single workflow
+
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
@@ -23,10 +31,13 @@ export const getUserWorkflows = query({
   },
 });
 
+// ─────────────────────────────────────────────
+// MUTATIONS
+// ─────────────────────────────────────────────
+
 export const createWorkflow = mutation({
   args: {
     userId: v.id("users"),
-    name: v.string(),
     useCase: v.string(),
     timeFrame: v.union(
       v.literal("3mo"), v.literal("6mo"), v.literal("1yr"),
@@ -94,21 +105,6 @@ export const updateWorkflow = mutation({
       patch.region = { ...(existing?.region ?? {}), description: regionDescription };
     }
     await ctx.db.patch(id, patch);
-  },
-});
-
-export const updateWorkflowStatus = mutation({
-  args: {
-    id: v.id("workflows"),
-    assemblyStatus: v.union(v.literal("pending"), v.literal("ready"), v.literal("error")),
-    assemblyError: v.optional(v.string()),
-  },
-  handler: async (ctx, { id, assemblyStatus, assemblyError }) => {
-    await ctx.db.patch(id, {
-      assemblyStatus,
-      assemblyError: assemblyError ?? undefined,
-      updatedAt: Date.now(),
-    });
   },
 });
 
