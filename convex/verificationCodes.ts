@@ -1,4 +1,4 @@
-import { mutation } from "./_generated/server";
+import { mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 
 const CODE_TTL_MS = 15 * 60 * 1000; // 15 minutes
@@ -45,5 +45,39 @@ export const verifyCode = mutation({
 
     await ctx.db.delete(record._id);
     return { valid: true, reason: null };
+  },
+});
+
+// ─────────────────────────────────────────────
+// INTERNAL (used by auth.ts actions)
+// ─────────────────────────────────────────────
+
+export const storeCode = internalMutation({
+  args: { email: v.string(), code: v.string(), expiresAt: v.float64() },
+  handler: async (ctx, { email, code, expiresAt }) => {
+    const existing = await ctx.db
+      .query("verificationCodes")
+      .withIndex("by_email", (q) => q.eq("email", email))
+      .unique();
+    if (existing) await ctx.db.delete(existing._id);
+    await ctx.db.insert("verificationCodes", { email, code, expiresAt });
+  },
+});
+
+export const consumeCode = internalMutation({
+  args: { email: v.string(), code: v.string() },
+  handler: async (ctx, { email, code }): Promise<boolean> => {
+    const record = await ctx.db
+      .query("verificationCodes")
+      .withIndex("by_email", (q) => q.eq("email", email))
+      .unique();
+    if (!record) return false;
+    if (Date.now() > record.expiresAt) {
+      await ctx.db.delete(record._id);
+      return false;
+    }
+    if (record.code !== code.trim()) return false;
+    await ctx.db.delete(record._id);
+    return true;
   },
 });

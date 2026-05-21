@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { useQuery, useMutation } from 'convex/react';
+import { useQuery, useMutation, useConvex } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import type { Id } from '../../../convex/_generated/dataModel';
 import {
@@ -103,6 +103,7 @@ export default function ProfilePage() {
   // delete account
   const [deleteConfirm, setDeleteConfirm] = useState('');
 
+  const convex = useConvex();
   const convexUserId = user?.convexUserId as Id<'users'> | undefined;
   const convexUser = useQuery(
     api.users.getUser,
@@ -157,14 +158,14 @@ export default function ProfilePage() {
     refreshUser();
   }
 
-  function handleChangePassword(e: React.FormEvent) {
+  async function handleChangePassword(e: React.FormEvent) {
     e.preventDefault();
     if (!user) return;
     setPwError('');
     setPwSuccess(false);
     if (newPw.length < 6) { setPwError('New password must be at least 6 characters.'); return; }
     if (newPw !== confirmPw) { setPwError('Passwords do not match.'); return; }
-    const ok = changePassword(user.email, currentPw, newPw);
+    const ok = await changePassword(user.email, currentPw, newPw, convex);
     if (!ok) { setPwError('Current password is incorrect.'); return; }
     setPwSuccess(true);
     setCurrentPw('');

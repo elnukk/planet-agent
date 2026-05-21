@@ -184,7 +184,6 @@ export default defineSchema({
     email: v.string(),
     code: v.string(),
     expiresAt: v.float64(),
-    used: v.boolean(),
   }).index("by_email", ["email"]),
 
   // ─────────────────────────────────────────────
