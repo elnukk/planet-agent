@@ -8,6 +8,7 @@ import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import planetLogo from '../../dashboard/planetlogo.png';
 import { type IntakeJSON } from '@/lib/workflowIntake';
+import { getCurrentUser } from '@/lib/auth';
 
 const TEAL = '#009DA5';
 
@@ -311,6 +312,10 @@ function ChatPanel({ workflowId, intake, notebookCells, onClose }: { workflowId:
   );
 }
 
+function getUserApiKeys(): Array<{ description: string; key: string }> {
+  return (getCurrentUser()?.apiKeys ?? []).map(({ description, key }) => ({ description, key }));
+}
+
 export default function WorkflowPage() {
   const params = useParams();
   const workflowId = params?.id as string;
@@ -362,6 +367,7 @@ export default function WorkflowPage() {
       user_description: wd.userDescription ?? '',
       inferred_intent: wd.inferredIntent ?? '',
       constraints: wd.constraints ?? [],
+      available_env_vars: getUserApiKeys().map((k) => k.description),
     };
 
     fetch('/api/assemble-workflow', {
@@ -411,13 +417,22 @@ export default function WorkflowPage() {
 
     setCellOutputs((prev) => ({ ...prev, [id]: { isRunning: true } }));
 
+    // Prepend all preceding code cells so each cell runs with full context
+    const codeCells = cells.filter((c) => c.type === 'code');
+    const targetIndex = codeCells.findIndex((c) => c.id === id);
+    const precedingCells = codeCells.slice(0, targetIndex);
+    const code = precedingCells.length > 0
+      ? `${precedingCells.map((c) => c.source).join('\n\n')}\n\n${targetCell.source}`
+      : targetCell.source;
+
     try {
       const response = await fetch('/api/run-cell', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          code: targetCell.source,
+          code,
           packages: workflowData?.packages ?? [],
+          userApiKeys: getUserApiKeys(),
         }),
       });
 
