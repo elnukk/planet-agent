@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useMutation, useConvex } from 'convex/react';
 import { api } from '../../convex/_generated/api';
-import { signIn, createAccount, getCurrentUser, resetPassword, setConvexUserId } from '@/lib/auth';
+import type { Id } from '../../convex/_generated/dataModel';
+import { signIn, getCurrentUser, hashPassword, upsertLocalUser, type User } from '@/lib/auth';
 
 import loginBg from './dashboard/loginbackground.png';
 import planetLogo from './dashboard/planetlogo.png';
@@ -14,124 +15,6 @@ const TEAL = '#009DA5';
 
 type Mode = 'login' | 'signup';
 
-// ─── Forgot-password modal ────────────────────────────────────────────────────
-function ForgotPasswordModal({ onClose }: { onClose: () => void }) {
-  const [step, setStep] = useState<'email' | 'reset' | 'done'>('email');
-  const [email, setEmail] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [error, setError] = useState('');
-
-  function handleEmailSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError('');
-    setStep('reset');
-  }
-
-  function handleReset(e: React.FormEvent) {
-    e.preventDefault();
-    setError('');
-    if (newPassword.length < 6) { setError('Password must be at least 6 characters.'); return; }
-    if (newPassword !== confirm) { setError('Passwords do not match.'); return; }
-    const ok = resetPassword(email, newPassword);
-    if (!ok) { setError('No account found with that email.'); setStep('email'); return; }
-    setStep('done');
-  }
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {step === 'done' ? (
-          <div className="text-center space-y-4">
-            <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto" style={{ backgroundColor: TEAL }}>
-              <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <h2 className="text-lg font-bold text-gray-900">Password updated!</h2>
-            <p className="text-sm text-gray-500">You can now sign in with your new password.</p>
-            <button
-              onClick={onClose}
-              className="w-full py-2.5 rounded-full text-white text-sm font-semibold"
-              style={{ backgroundColor: TEAL }}
-            >
-              Back to Login
-            </button>
-          </div>
-        ) : step === 'email' ? (
-          <>
-            <h2 className="text-lg font-bold text-gray-900 mb-1">Forgot password?</h2>
-            <p className="text-sm text-gray-500 mb-5">Enter your email and we&apos;ll let you set a new password.</p>
-            <form onSubmit={handleEmailSubmit} className="space-y-3">
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                placeholder="Email address"
-                className="w-full px-4 py-3 border border-gray-200 rounded-full text-sm placeholder-gray-400 focus:outline-none focus:ring-2 transition"
-              />
-              {error && <p className="text-xs text-red-500">{error}</p>}
-              <div className="flex gap-3 pt-1">
-                <button type="button" onClick={onClose}
-                  className="flex-1 py-2.5 rounded-full text-sm font-medium text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors">
-                  Cancel
-                </button>
-                <button type="submit" disabled={!email.trim()}
-                  className="flex-1 py-2.5 rounded-full text-sm font-semibold text-white disabled:opacity-50 transition-colors"
-                  style={{ backgroundColor: TEAL }}>
-                  Continue
-                </button>
-              </div>
-            </form>
-          </>
-        ) : (
-          <>
-            <h2 className="text-lg font-bold text-gray-900 mb-1">Set new password</h2>
-            <p className="text-sm text-gray-500 mb-5">Choose a new password for <span className="font-medium text-gray-700">{email}</span>.</p>
-            <form onSubmit={handleReset} className="space-y-3">
-              <input
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                required
-                placeholder="New password"
-                className="w-full px-4 py-3 border border-gray-200 rounded-full text-sm placeholder-gray-400 focus:outline-none focus:ring-2 transition"
-              />
-              <input
-                type="password"
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-                required
-                placeholder="Confirm new password"
-                className="w-full px-4 py-3 border border-gray-200 rounded-full text-sm placeholder-gray-400 focus:outline-none focus:ring-2 transition"
-              />
-              {error && <p className="text-xs text-red-500">{error}</p>}
-              <div className="flex gap-3 pt-1">
-                <button type="button" onClick={() => setStep('email')}
-                  className="flex-1 py-2.5 rounded-full text-sm font-medium text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors">
-                  Back
-                </button>
-                <button type="submit" disabled={!newPassword || !confirm}
-                  className="flex-1 py-2.5 rounded-full text-sm font-semibold text-white disabled:opacity-50 transition-colors"
-                  style={{ backgroundColor: TEAL }}>
-                  Reset Password
-                </button>
-              </div>
-            </form>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
 const INPUT = 'w-full px-4 py-3 border border-gray-200 rounded-full text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-100 transition';
 
 // ─── Main auth page ───────────────────────────────────────────────────────────
@@ -139,6 +22,8 @@ export default function AuthPage() {
   const router = useRouter();
   const convex = useConvex();
   const createUser = useMutation(api.users.createUser);
+  const updatePassword = useMutation(api.users.updateUserPassword);
+  const saveApiKey = useMutation(api.users.setApiKey);
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<Mode>('login');
 
@@ -147,7 +32,6 @@ export default function AuthPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [showForgot, setShowForgot] = useState(false);
 
   // signup-only
   const [name, setName] = useState('');
@@ -189,39 +73,80 @@ export default function AuthPage() {
     setLoading(true);
     try {
       if (mode === 'login') {
-        const user = signIn(email, password);
-        if (!user) { setError('Incorrect email or password.'); return; }
-        if (!user.convexUserId) {
-          const convexUser = await convex.query(api.users.getUserByEmail, { email: email.toLowerCase().trim() });
-          if (convexUser) {
-            setConvexUserId(user.id, convexUser._id as string);
-          } else {
-            const convexId = await createUser({
-              name: user.name,
-              email: email.toLowerCase().trim(),
-            });
-            setConvexUserId(user.id, convexId as string);
-          }
+        const normalizedEmail = email.toLowerCase().trim();
+        const hash = await hashPassword(password);
+        const convexUser = await convex.query(api.users.getUserByEmail, { email: normalizedEmail });
+
+        if (!convexUser) {
+          // Legacy user — exists only in localStorage on this device
+          const legacy = signIn(email, password);
+          if (!legacy) { setError('Incorrect email or password.'); return; }
+          // Migrate to Convex with password hash
+          const convexId = await createUser({ name: legacy.name, email: normalizedEmail, passwordHash: hash });
+          upsertLocalUser({ ...legacy, convexUserId: convexId as string });
+          router.push('/dashboard');
+          return;
         }
+
+        if (convexUser.passwordHash) {
+          if (convexUser.passwordHash !== hash) { setError('Incorrect email or password.'); return; }
+        } else {
+          // Convex user exists but was created before password hashing — check localStorage
+          const legacy = signIn(email, password);
+          if (!legacy) { setError('Incorrect email or password.'); return; }
+          // Migrate: save hash to Convex
+          await updatePassword({ id: convexUser._id, passwordHash: hash });
+        }
+
+        const sessionUser: User = {
+          id: convexUser._id as string,
+          convexUserId: convexUser._id as string,
+          name: convexUser.name,
+          email: convexUser.email,
+          phone: convexUser.phoneNumber,
+          organization: convexUser.organizationName,
+          role: convexUser.roleInOrganization,
+          apiKeys: convexUser.apiKeyValue
+            ? [{ id: 'primary', description: convexUser.apiKeyDescription || 'API Key', key: convexUser.apiKeyValue, createdAt: new Date(convexUser.createdAt).toISOString() }]
+            : [],
+          createdAt: new Date(convexUser.createdAt).toISOString(),
+        };
+        upsertLocalUser(sessionUser);
         router.push('/dashboard');
+
       } else {
         if (!name.trim()) { setError('Please enter your full name.'); return; }
         if (confirmEmail.toLowerCase() !== email.toLowerCase()) { setError('Email addresses do not match.'); return; }
         if (password.length < 6) { setError('Password must be at least 6 characters.'); return; }
         if (password !== confirmPassword) { setError('Passwords do not match.'); return; }
         if (phone && phone !== confirmPhone) { setError('Phone numbers do not match.'); return; }
-        const apiKeys = (showApiKey && apiKeyDesc.trim() && apiKeyValue.trim())
-          ? [{ id: crypto.randomUUID(), description: apiKeyDesc.trim(), key: apiKeyValue.trim(), createdAt: new Date().toISOString() }]
-          : [];
-        const result = createAccount(name, email, password, {
+
+        const normalizedEmail = email.toLowerCase().trim();
+        const existing = await convex.query(api.users.getUserByEmail, { email: normalizedEmail });
+        if (existing) { setError('An account with this email already exists.'); return; }
+
+        const hash = await hashPassword(password);
+        const convexId = await createUser({ name: name.trim(), email: normalizedEmail, passwordHash: hash });
+
+        const hasApiKey = showApiKey && apiKeyDesc.trim() && apiKeyValue.trim();
+        if (hasApiKey) {
+          await saveApiKey({ id: convexId as Id<'users'>, apiKeyDescription: apiKeyDesc.trim(), apiKeyValue: apiKeyValue.trim() });
+        }
+
+        const sessionUser: User = {
+          id: convexId as string,
+          convexUserId: convexId as string,
+          name: name.trim(),
+          email: normalizedEmail,
           phone: phone.trim() || undefined,
           organization: organization.trim() || undefined,
           role: orgRole.trim() || undefined,
-          apiKeys,
-        });
-        if (result === 'exists') { setError('An account with this email already exists.'); return; }
-        const convexId = await createUser({ name: name.trim(), email: email.toLowerCase().trim() });
-        setConvexUserId(result.id, convexId as string);
+          apiKeys: hasApiKey
+            ? [{ id: 'primary', description: apiKeyDesc.trim(), key: apiKeyValue.trim(), createdAt: new Date().toISOString() }]
+            : [],
+          createdAt: new Date().toISOString(),
+        };
+        upsertLocalUser(sessionUser);
         router.push('/dashboard');
       }
     } finally {
@@ -335,18 +260,8 @@ export default function AuthPage() {
                 <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
                   required placeholder="Email address" className={INPUT} />
 
-                <div>
-                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                    required placeholder="Password" className={INPUT} />
-                  {mounted && mode === 'login' && (
-                    <div className="text-right mt-1.5">
-                      <button type="button" onClick={() => setShowForgot(true)}
-                        className="text-xs hover:underline transition-colors" style={{ color: TEAL }}>
-                        Forgot password?
-                      </button>
-                    </div>
-                  )}
-                </div>
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+                  required placeholder="Password" className={INPUT} />
               </>
             )}
 
@@ -375,7 +290,6 @@ export default function AuthPage() {
         </div>
       </div>
 
-      {showForgot && <ForgotPasswordModal onClose={() => setShowForgot(false)} />}
     </div>
   );
 }

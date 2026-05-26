@@ -73,9 +73,9 @@ export const createUser = mutation({
   args: {
     name: v.string(),
     email: v.string(),
+    passwordHash: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    // check if user already exists
     const existing = await ctx.db
       .query("users")
       .withIndex("by_email", (q) => q.eq("email", args.email))
@@ -87,17 +87,13 @@ export const createUser = mutation({
 
     const userId = await ctx.db.insert("users", {
       createdAt: Date.now(),
-
       email: args.email,
       name: args.name,
-
       externalId: undefined,
-
-      passwordHash: undefined,
+      passwordHash: args.passwordHash,
       phoneNumber: undefined,
       organizationName: undefined,
       roleInOrganization: undefined,
-
       apiKeyDescription: undefined,
       apiKeyValue: undefined,
     });
@@ -143,6 +139,15 @@ export const deleteUser = mutation({
       await ctx.db.delete(wf._id);
     }
     await ctx.db.delete(id);
+  },
+});
+
+export const updateUserPassword = mutation({
+  args: { id: v.id("users"), passwordHash: v.string() },
+  handler: async (ctx, { id, passwordHash }) => {
+    const user = await ctx.db.get(id);
+    if (!user) throw new Error("User not found");
+    await ctx.db.patch(id, { passwordHash });
   },
 });
 

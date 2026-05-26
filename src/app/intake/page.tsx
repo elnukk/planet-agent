@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useMutation } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
-import type { Id } from 'convex/values';
+import type { Id } from '../../../convex/_generated/dataModel';
 import { getCurrentUser } from '@/lib/auth';
 import { storeWorkflowImage } from '@/lib/workflowImages';
 import { type IntakeJSON } from '@/lib/workflowIntake';
@@ -868,6 +868,7 @@ export default function IntakePage() {
           planetProduct: planetProduct.join(', '),
           singleQuestion: true,
           existingQuestions: aiQuestions,
+          replaceIndex: currentQIdx,
         }),
       });
       if (res.ok) {

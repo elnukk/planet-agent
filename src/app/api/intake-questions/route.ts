@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'ANTHROPIC_API_KEY not set' }, { status: 500 });
   }
 
-  const { useCase, region, dateRange, planetProduct, singleQuestion, existingQuestions } = await req.json();
+  const { useCase, region, dateRange, planetProduct, singleQuestion, existingQuestions, replaceIndex } = await req.json();
 
   const metadataPath = path.join(process.cwd(), 'knowledge-base', 'data', 'notebooks_metadata.json');
   const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf-8'));
@@ -20,17 +20,27 @@ export async function POST(req: NextRequest) {
 - Time range: ${dateRange}
 - Planet product: ${planetProduct || 'not specified'}`;
 
+  const questions = existingQuestions as string[];
+  const targetQuestion = typeof replaceIndex === 'number' ? questions[replaceIndex] : questions[0];
+  const otherQuestions = typeof replaceIndex === 'number'
+    ? questions.filter((_: string, i: number) => i !== replaceIndex)
+    : questions.slice(1);
+
   const prompt = singleQuestion
     ? `You are an assistant helping a user build a satellite data analysis workflow using Planet APIs.
 
 ${context}
 
-The user already has these follow-up questions and wants a replacement for one of them:
-${(existingQuestions as string[]).map((q: string, i: number) => `${i + 1}. ${q}`).join('\n')}
+The user wants to replace this question:
+"${targetQuestion}"
 
-Generate exactly ONE new follow-up question that:
-- Is different from all questions listed above
-- Helps narrow down the right workflow from this catalog: ${JSON.stringify(Object.keys(metadata))}
+These other questions will stay (do NOT generate something on the same topic as any of these):
+${otherQuestions.map((q: string) => `- ${q}`).join('\n')}
+
+Generate exactly ONE replacement follow-up question that:
+- Covers a COMPLETELY DIFFERENT topic than the question being replaced
+- Does not overlap with any of the remaining questions above
+- Helps clarify which satellite analysis workflow to build for this user
 - Is plain, conversational, and specific to the user's context
 
 Respond ONLY with a JSON array containing exactly one question string:

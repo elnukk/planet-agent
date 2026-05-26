@@ -50,6 +50,7 @@ export default function ProfilePage() {
   const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
 
   const saveApiKeyToConvex = useMutation(api.users.setApiKey);
+  const updateUserProfileMutation = useMutation(api.users.updateUser);
   const deleteUserMutation = useMutation(api.users.deleteUser);
 
   // delete account
@@ -81,15 +82,25 @@ export default function ProfilePage() {
     setEditing(true);
   }
 
-  function saveProfile() {
+  async function saveProfile() {
     if (!user) return;
-    updateUser(user.id, {
+    const updates = {
       name: editName.trim() || user.name,
       phone: editPhone.trim() || undefined,
       organization: editOrg.trim() || undefined,
       role: editRole.trim() || undefined,
-    });
+    };
+    updateUser(user.id, updates);
     refreshUser();
+    if (user.convexUserId) {
+      try {
+        const convexUpdates: Record<string, string | undefined> = { name: updates.name };
+        if (editPhone.trim()) convexUpdates.phoneNumber = editPhone.trim();
+        if (editOrg.trim()) convexUpdates.organizationName = editOrg.trim();
+        if (editRole.trim()) convexUpdates.roleInOrganization = editRole.trim();
+        await updateUserProfileMutation({ id: user.convexUserId as Id<'users'>, ...convexUpdates });
+      } catch { /* best-effort */ }
+    }
     setEditing(false);
   }
 

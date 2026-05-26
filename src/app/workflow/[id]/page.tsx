@@ -136,6 +136,9 @@ function CodeCell({
 }: {
   cell: Cell; showCode: boolean; ran: boolean; onRun: (id: string) => void;
 }) {
+  const ranOk = ran && !cell.isRunning && !cell.stderr;
+  const noOutput = ranOk && !cell.output;
+
   return (
     <div className="rounded-xl overflow-hidden border border-gray-200">
       {showCode && (
@@ -145,10 +148,21 @@ function CodeCell({
             <button
               onClick={() => onRun(cell.id)}
               disabled={cell.isRunning}
-              className="text-xs text-white font-medium px-3 py-1 rounded-full transition-colors disabled:opacity-50"
-              style={{ backgroundColor: TEAL }}
+              className="text-xs text-white font-medium px-3 py-1 rounded-full transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              style={{ backgroundColor: ranOk ? '#16a34a' : TEAL }}
             >
-              {cell.isRunning ? 'Running…' : '▶ Run'}
+              {cell.isRunning ? (
+                'Running…'
+              ) : ranOk ? (
+                <>
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  Ran
+                </>
+              ) : (
+                '▶ Run'
+              )}
             </button>
           </div>
           <pre className="text-sm font-mono text-gray-100 leading-relaxed overflow-x-auto whitespace-pre-wrap">
@@ -160,6 +174,14 @@ function CodeCell({
         <div className="bg-gray-50 border-t border-gray-200 px-4 py-3">
           <span className="text-xs text-gray-400 font-mono block mb-1">Output:</span>
           <pre className="text-sm font-mono text-gray-800 whitespace-pre-wrap">{cell.output}</pre>
+        </div>
+      )}
+      {noOutput && (
+        <div className="bg-green-50 border-t border-green-100 px-4 py-2 flex items-center gap-1.5">
+          <svg className="w-3.5 h-3.5 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+          <span className="text-xs text-green-600 font-mono">No output</span>
         </div>
       )}
       {ran && cell.stderr && (
@@ -203,6 +225,40 @@ function IntakeSummaryCard({ intake }: { intake: IntakeJSON }) {
         </div>
       )}
     </div>
+  );
+}
+
+function parseLine(line: string): React.ReactNode[] {
+  const parts = line.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**'))
+      return <strong key={i}>{part.slice(2, -2)}</strong>;
+    if (part.startsWith('*') && part.endsWith('*'))
+      return <em key={i}>{part.slice(1, -1)}</em>;
+    if (part.startsWith('`') && part.endsWith('`'))
+      return <code key={i} className="bg-gray-200 px-1 rounded text-xs font-mono">{part.slice(1, -1)}</code>;
+    return part;
+  });
+}
+
+function ChatMarkdown({ content }: { content: string }) {
+  const lines = content.split('\n');
+  return (
+    <>
+      {lines.map((line, i) => {
+        const isList = line.startsWith('- ') || line.startsWith('• ');
+        if (isList) {
+          return (
+            <div key={i} className="flex gap-1.5 my-0.5">
+              <span className="mt-1.5 w-1 h-1 rounded-full bg-current flex-shrink-0" />
+              <span>{parseLine(line.slice(2))}</span>
+            </div>
+          );
+        }
+        if (line.trim() === '') return <div key={i} className="h-1.5" />;
+        return <p key={i} className="my-0.5">{parseLine(line)}</p>;
+      })}
+    </>
   );
 }
 
@@ -277,7 +333,7 @@ function ChatPanel({ workflowId, intake, apiKeyValue, notebookCells, onClose }: 
               }`}
               style={msg.role === 'user' ? { backgroundColor: TEAL } : {}}
             >
-              {msg.content}
+              {msg.role === 'assistant' ? <ChatMarkdown content={msg.content} /> : msg.content}
             </div>
           </div>
         ))}

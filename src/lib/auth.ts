@@ -285,6 +285,26 @@ export function purgeExpiredWorkflows(): void {
   }
 }
 
+export async function hashPassword(password: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+export function upsertLocalUser(user: User): void {
+  const users = getUsers();
+  const idx = users.findIndex((u) => u.id === user.id || u.email.toLowerCase() === user.email.toLowerCase());
+  if (idx === -1) {
+    users.push(user);
+  } else {
+    users[idx] = { ...users[idx], ...user };
+  }
+  saveUsers(users);
+  refreshSession(user);
+}
+
 export function setConvexUserId(localUserId: string, convexUserId: string): void {
   const users = getUsers();
   const idx = users.findIndex((u) => u.id === localUserId);
