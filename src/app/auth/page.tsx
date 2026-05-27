@@ -4,12 +4,12 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useMutation, useConvex } from 'convex/react';
-import { api } from '../../convex/_generated/api';
-import type { Id } from '../../convex/_generated/dataModel';
+import { api } from '../../../convex/_generated/api';
+import type { Id } from '../../../convex/_generated/dataModel';
 import { signIn, getCurrentUser, hashPassword, upsertLocalUser, type User } from '@/lib/auth';
 
-import loginBg from './dashboard/loginbackground.png';
-import planetLogo from './dashboard/planetlogo.png';
+import loginBg from '../dashboard/loginbackground.png';
+import planetLogo from '../dashboard/planetlogo.png';
 
 const TEAL = '#009DA5';
 
