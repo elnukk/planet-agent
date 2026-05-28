@@ -13,7 +13,6 @@ import {
 } from '@/lib/auth';
 import {
   getWorkflowImage, storeWorkflowImage,
-  getWorkflowImageList, storeWorkflowImageList,
 } from '@/lib/workflowImages';
 import planetLogo from './planetlogo.png';
 
@@ -64,36 +63,20 @@ function WorkflowCard({
   onClick: () => void;
   onDelete: () => void;
 }) {
-  const [imgList, setImgList] = useState<string[]>(() => {
-    const list = getWorkflowImageList(workflow.id);
-    if (list.length) return list;
-    const single = getWorkflowImage(workflow.id);
-    return single ? [single] : [];
-  });
-  const [imgIdx, setImgIdx] = useState(0);
-  const imgUrl = imgList[imgIdx] ?? null;
+  const [imgUrl, setImgUrl] = useState<string | null>(() => getWorkflowImage(workflow.id));
 
   useEffect(() => {
-    if (imgList.length) return;
-    fetch(`/api/workflow-image?name=${encodeURIComponent(workflow.name)}&limit=5`)
+    if (imgUrl) return;
+    fetch(`/api/workflow-image?name=${encodeURIComponent(workflow.name)}&limit=1`)
       .then((r) => r.json())
       .then(({ urls }: { urls: string[] }) => {
         if (urls.length) {
-          setImgList(urls);
+          setImgUrl(urls[0]);
           storeWorkflowImage(workflow.id, urls[0]);
-          storeWorkflowImageList(workflow.id, urls);
         }
       })
       .catch(() => {});
-  }, [workflow.id, workflow.name, imgList.length]);
-
-  function cycleImage(e: React.MouseEvent) {
-    e.stopPropagation();
-    if (imgList.length < 2) return;
-    const next = (imgIdx + 1) % imgList.length;
-    setImgIdx(next);
-    storeWorkflowImage(workflow.id, imgList[next]);
-  }
+  }, [workflow.id, workflow.name, imgUrl]);
 
   return (
     <div className="group relative rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-200">
@@ -119,19 +102,6 @@ function WorkflowCard({
           </span>
         </div>
       </button>
-
-      {/* Cycle image button — shown on hover when multiple images available */}
-      {imgList.length > 1 && (
-        <button
-          onClick={cycleImage}
-          title="Next photo"
-          className="absolute top-2 left-2 w-7 h-7 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
-          </svg>
-        </button>
-      )}
 
       {/* Delete button shown on hover */}
       <button
