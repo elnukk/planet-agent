@@ -104,20 +104,33 @@ Respond ONLY with a JSON array of 3–5 question strings, no explanation, no mar
     });
 
     let raw = (message.content[0] as { type: string; text: string }).text.trim();
-    raw = raw.replace(/^```(?:json)?/, '').replace(/```$/, '').trim();
 
-    // Check for done signal from sufficiency check
+    // Strip markdown fences
+    raw = raw.replace(/^```(?:json)?\s*/m, '').replace(/\s*```\s*$/m, '').trim();
+
+    // Extract the first JSON array or object if the model wrapped it in prose
+    const arrayMatch = raw.match(/\[[\s\S]*\]/);
+    const objectMatch = raw.match(/\{[\s\S]*\}/);
+    const extracted = arrayMatch?.[0] ?? objectMatch?.[0] ?? raw;
+
+    let parsed: unknown;
     try {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.done === true) {
-        return NextResponse.json({ done: true, questions: [] });
-      }
-    } catch {}
+      parsed = JSON.parse(extracted);
+    } catch {
+      console.error('[intake-questions] JSON parse failed, raw:', raw);
+      // Return a safe fallback rather than a 502 so the UI doesn't hang
+      return NextResponse.json({ questions: ['What specific output format do you need — for example, a GeoTIFF export, a CSV summary, or an interactive map?'] });
+    }
 
-    const questions: string[] = JSON.parse(raw);
+    // Done signal from sufficiency check
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && (parsed as Record<string, unknown>).done === true) {
+      return NextResponse.json({ done: true, questions: [] });
+    }
+
+    const questions: string[] = Array.isArray(parsed) ? parsed : [];
     return NextResponse.json({ questions: singleQuestion ? questions.slice(0, 1) : questions.slice(0, 5) });
   } catch (e) {
     console.error('[intake-questions] Anthropic error', e);
-    return NextResponse.json({ error: 'Anthropic API call failed' }, { status: 502 });
+    return NextResponse.json({ questions: ['What specific output format do you need — for example, a GeoTIFF export, a CSV summary, or an interactive map?'] });
   }
 }
