@@ -38,251 +38,107 @@ export interface Workflow {
   updatedAt: string;
 }
 
-const USERS_KEY = 'planet_users';
-const PASSWORDS_KEY = 'planet_passwords';
-const SESSION_KEY = 'planet_session';
-const WORKFLOWS_KEY = 'planet_workflows';
+// ─── Cookie-based session ─────────────────────────────────────────────────────
 
-function getUsers(): User[] {
+const SESSION_COOKIE = 'planet_session';
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
+
+function writeSessionCookie(user: User): void {
+  if (typeof document === 'undefined') return;
+  const value = btoa(unescape(encodeURIComponent(JSON.stringify(user))));
+  document.cookie = `${SESSION_COOKIE}=${value}; path=/; max-age=${COOKIE_MAX_AGE}; SameSite=Strict`;
+}
+
+function readSessionCookie(): User | null {
+  if (typeof document === 'undefined') return null;
   try {
-    return JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
-  } catch {
-    return [];
-  }
-}
-
-function saveUsers(users: User[]): void {
-  localStorage.setItem(USERS_KEY, JSON.stringify(users));
-}
-
-function refreshSession(user: User): void {
-  localStorage.setItem(SESSION_KEY, JSON.stringify(user));
-}
-
-export function getCurrentUser(): User | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    return raw ? JSON.parse(raw) : null;
+    const match = document.cookie
+      .split(';')
+      .find((c) => c.trim().startsWith(`${SESSION_COOKIE}=`));
+    if (!match) return null;
+    const value = match.trim().slice(SESSION_COOKIE.length + 1);
+    return JSON.parse(decodeURIComponent(escape(atob(value))));
   } catch {
     return null;
   }
 }
 
-export function signIn(email: string, password: string): User | null {
-  const users = getUsers();
-  const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
-  if (!user) return null;
-  const passwords: Record<string, string> = JSON.parse(
-    localStorage.getItem(PASSWORDS_KEY) || '{}'
-  );
-  if (passwords[user.email] !== password) return null;
-  localStorage.setItem(SESSION_KEY, JSON.stringify(user));
-  return user;
-}
-
-export function createAccount(
-  name: string,
-  email: string,
-  password: string,
-  extra?: { phone?: string; organization?: string; role?: string; apiKeys?: ApiKey[] }
-): User | 'exists' {
-  const users = getUsers();
-  if (users.find((u) => u.email.toLowerCase() === email.toLowerCase())) return 'exists';
-  const user: User = {
-    id: crypto.randomUUID(),
-    name: name.trim(),
-    email: email.toLowerCase().trim(),
-    phone: extra?.phone || undefined,
-    organization: extra?.organization || undefined,
-    role: extra?.role || undefined,
-    apiKeys: extra?.apiKeys ?? [],
-    preferences: {
-      notifyEmail: true,
-      notifyWorkflow: true,
-      notifyDigest: false,
-      notifyMarketing: false,
-      privacySharing: false,
-      privacyAnalytics: false,
-      accountVisibility: 'private',
-      language: 'English',
-      timezone: '',
-      twoFactor: false,
-      theme: 'system',
-    },
-    createdAt: new Date().toISOString(),
-  };
-  const passwords: Record<string, string> = JSON.parse(
-    localStorage.getItem(PASSWORDS_KEY) || '{}'
-  );
-  passwords[user.email] = password;
-  localStorage.setItem(PASSWORDS_KEY, JSON.stringify(passwords));
-  users.push(user);
-  saveUsers(users);
-  refreshSession(user);
-  return user;
+export function getCurrentUser(): User | null {
+  if (typeof window === 'undefined') return null;
+  return readSessionCookie();
 }
 
 export function signOut(): void {
-  localStorage.removeItem(SESSION_KEY);
+  if (typeof document === 'undefined') return;
+  document.cookie = `${SESSION_COOKIE}=; path=/; max-age=0; SameSite=Strict`;
 }
 
-export function resetPassword(email: string, newPassword: string): boolean {
-  const users = getUsers();
-  const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
-  if (!user) return false;
-  const passwords: Record<string, string> = JSON.parse(
-    localStorage.getItem(PASSWORDS_KEY) || '{}'
-  );
-  passwords[user.email] = newPassword;
-  localStorage.setItem(PASSWORDS_KEY, JSON.stringify(passwords));
-  return true;
+// Sets (or replaces) the session cookie. Called after login and signup.
+export function upsertLocalUser(user: User): void {
+  writeSessionCookie(user);
 }
 
-export function changePassword(email: string, currentPassword: string, newPassword: string): boolean {
-  const users = getUsers();
-  const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
-  if (!user) return false;
-  const passwords: Record<string, string> = JSON.parse(
-    localStorage.getItem(PASSWORDS_KEY) || '{}'
-  );
-  if (passwords[user.email] !== currentPassword) return false;
-  passwords[user.email] = newPassword;
-  localStorage.setItem(PASSWORDS_KEY, JSON.stringify(passwords));
-  return true;
+// Legacy: reads plaintext password from localStorage for accounts created before
+// Convex migration. Used only as a fallback in the login flow; no new passwords
+// are written to localStorage.
+export function signIn(email: string, password: string): User | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const passwords: Record<string, string> = JSON.parse(
+      localStorage.getItem('planet_passwords') || '{}'
+    );
+    const users: User[] = JSON.parse(localStorage.getItem('planet_users') || '[]');
+    const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+    if (!user) return null;
+    if (passwords[user.email] !== password) return null;
+    return user;
+  } catch {
+    return null;
+  }
 }
 
+// Updates the in-cookie user object. The actual Convex record is patched
+// separately by the profile page via useMutation.
 export function updateUser(
   userId: string,
   updates: Partial<Omit<User, 'id' | 'email' | 'createdAt'>>
 ): User | null {
-  const users = getUsers();
-  const idx = users.findIndex((u) => u.id === userId);
-  if (idx === -1) return null;
-  users[idx] = { ...users[idx], ...updates };
-  saveUsers(users);
   const session = getCurrentUser();
-  if (session?.id === userId) refreshSession(users[idx]);
-  return users[idx];
+  if (!session || session.id !== userId) return null;
+  const updated = { ...session, ...updates };
+  writeSessionCookie(updated);
+  return updated;
 }
 
 export function addApiKey(userId: string, description: string, key: string): User | null {
-  const users = getUsers();
-  const idx = users.findIndex((u) => u.id === userId);
-  if (idx === -1) return null;
+  const session = getCurrentUser();
+  if (!session || session.id !== userId) return null;
   const newKey: ApiKey = {
     id: crypto.randomUUID(),
     description,
     key,
     createdAt: new Date().toISOString(),
   };
-  users[idx].apiKeys = [...(users[idx].apiKeys ?? []), newKey];
-  saveUsers(users);
-  const session = getCurrentUser();
-  if (session?.id === userId) refreshSession(users[idx]);
-  return users[idx];
+  const updated = { ...session, apiKeys: [...(session.apiKeys ?? []), newKey] };
+  writeSessionCookie(updated);
+  return updated;
 }
 
 export function removeApiKey(userId: string, keyId: string): User | null {
-  const users = getUsers();
-  const idx = users.findIndex((u) => u.id === userId);
-  if (idx === -1) return null;
-  users[idx].apiKeys = (users[idx].apiKeys ?? []).filter((k) => k.id !== keyId);
-  saveUsers(users);
   const session = getCurrentUser();
-  if (session?.id === userId) refreshSession(users[idx]);
-  return users[idx];
-}
-
-export function getUserWorkflows(userId: string): Workflow[] {
-  try {
-    const all: Workflow[] = JSON.parse(localStorage.getItem(WORKFLOWS_KEY) || '[]');
-    return all
-      .filter((w) => w.userId === userId)
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-  } catch {
-    return [];
-  }
-}
-
-export function createWorkflow(userId: string, name: string): Workflow {
-  const workflow: Workflow = {
-    id: crypto.randomUUID(),
-    userId,
-    name,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+  if (!session || session.id !== userId) return null;
+  const updated = {
+    ...session,
+    apiKeys: (session.apiKeys ?? []).filter((k) => k.id !== keyId),
   };
-  const all: Workflow[] = JSON.parse(localStorage.getItem(WORKFLOWS_KEY) || '[]');
-  all.push(workflow);
-  localStorage.setItem(WORKFLOWS_KEY, JSON.stringify(all));
-  return workflow;
+  writeSessionCookie(updated);
+  return updated;
 }
 
-// ─── Trash / soft-delete ──────────────────────────────────────────────────────
-
-const TRASH_KEY = 'planet_trash';
-
-export interface DeletedWorkflow extends Workflow {
-  deletedAt: string;
-}
-
-function getTrash(): DeletedWorkflow[] {
-  try {
-    return JSON.parse(localStorage.getItem(TRASH_KEY) || '[]');
-  } catch {
-    return [];
-  }
-}
-
-export function softDeleteWorkflow(workflowId: string): boolean {
-  const all: Workflow[] = JSON.parse(localStorage.getItem(WORKFLOWS_KEY) || '[]');
-  const idx = all.findIndex((w) => w.id === workflowId);
-  if (idx === -1) return false;
-  const [deleted] = all.splice(idx, 1);
-  localStorage.setItem(WORKFLOWS_KEY, JSON.stringify(all));
-  const trash = getTrash();
-  trash.push({ ...deleted, deletedAt: new Date().toISOString() });
-  localStorage.setItem(TRASH_KEY, JSON.stringify(trash));
-  return true;
-}
-
-export function getDeletedWorkflows(userId: string): DeletedWorkflow[] {
-  return getTrash()
-    .filter((w) => w.userId === userId)
-    .sort((a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime());
-}
-
-export function restoreWorkflow(workflowId: string): Workflow | null {
-  const trash = getTrash();
-  const idx = trash.findIndex((w) => w.id === workflowId);
-  if (idx === -1) return null;
-  const item = trash[idx];
-  const remaining = trash.filter((_, i) => i !== idx);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { deletedAt: _d, ...restored } = item;
-  localStorage.setItem(TRASH_KEY, JSON.stringify(remaining));
-  const all: Workflow[] = JSON.parse(localStorage.getItem(WORKFLOWS_KEY) || '[]');
-  all.push(restored);
-  localStorage.setItem(WORKFLOWS_KEY, JSON.stringify(all));
-  return restored;
-}
-
-export function permanentlyDeleteWorkflow(workflowId: string): boolean {
-  const trash = getTrash();
-  const filtered = trash.filter((w) => w.id !== workflowId);
-  if (filtered.length === trash.length) return false;
-  localStorage.setItem(TRASH_KEY, JSON.stringify(filtered));
-  return true;
-}
-
-export function purgeExpiredWorkflows(): void {
-  const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-  const trash = getTrash();
-  const kept = trash.filter((w) => Date.now() - new Date(w.deletedAt).getTime() < THIRTY_DAYS_MS);
-  if (kept.length !== trash.length) {
-    localStorage.setItem(TRASH_KEY, JSON.stringify(kept));
-  }
+export function setConvexUserId(localUserId: string, convexUserId: string): void {
+  const session = getCurrentUser();
+  if (!session || session.id !== localUserId) return;
+  writeSessionCookie({ ...session, convexUserId });
 }
 
 export async function hashPassword(password: string): Promise<string> {
@@ -291,26 +147,4 @@ export async function hashPassword(password: string): Promise<string> {
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-export function upsertLocalUser(user: User): void {
-  const users = getUsers();
-  const idx = users.findIndex((u) => u.id === user.id || u.email.toLowerCase() === user.email.toLowerCase());
-  if (idx === -1) {
-    users.push(user);
-  } else {
-    users[idx] = { ...users[idx], ...user };
-  }
-  saveUsers(users);
-  refreshSession(user);
-}
-
-export function setConvexUserId(localUserId: string, convexUserId: string): void {
-  const users = getUsers();
-  const idx = users.findIndex((u) => u.id === localUserId);
-  if (idx === -1) return;
-  users[idx] = { ...users[idx], convexUserId };
-  saveUsers(users);
-  const session = getCurrentUser();
-  if (session?.id === localUserId) refreshSession(users[idx]);
 }

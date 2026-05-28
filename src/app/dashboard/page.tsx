@@ -11,7 +11,10 @@ import {
   setConvexUserId,
   type User,
 } from '@/lib/auth';
-import { getWorkflowImage } from '@/lib/workflowImages';
+import {
+  getWorkflowImage, storeWorkflowImage,
+  getWorkflowImageList, storeWorkflowImageList,
+} from '@/lib/workflowImages';
 import planetLogo from './planetlogo.png';
 
 interface DisplayWorkflow {
@@ -39,13 +42,16 @@ function cardGradient(id: string): string {
   return GRADIENTS[Math.abs(h) % GRADIENTS.length];
 }
 
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  const days = Math.floor((Date.now() - d.getTime()) / 86400000);
-  if (days === 0) return 'Today';
-  if (days === 1) return 'Yesterday';
-  if (days < 7) return `${days} days ago`;
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+const TITLE_CASE_SKIP = new Set(['a','an','the','and','but','or','for','nor','on','at','to','by','in','of','up','as','is']);
+function toTitleCase(str: string): string {
+  return str
+    .split(' ')
+    .map((word, i, arr) =>
+      i === 0 || i === arr.length - 1 || !TITLE_CASE_SKIP.has(word.toLowerCase())
+        ? word.charAt(0).toUpperCase() + word.slice(1)
+        : word.toLowerCase()
+    )
+    .join(' ');
 }
 
 
@@ -58,29 +64,74 @@ function WorkflowCard({
   onClick: () => void;
   onDelete: () => void;
 }) {
-  const [imgUrl, setImgUrl] = useState<string | null>(null);
+  const [imgList, setImgList] = useState<string[]>(() => {
+    const list = getWorkflowImageList(workflow.id);
+    if (list.length) return list;
+    const single = getWorkflowImage(workflow.id);
+    return single ? [single] : [];
+  });
+  const [imgIdx, setImgIdx] = useState(0);
+  const imgUrl = imgList[imgIdx] ?? null;
 
   useEffect(() => {
-    setImgUrl(getWorkflowImage(workflow.id));
-  }, [workflow.id]);
+    if (imgList.length) return;
+    fetch(`/api/workflow-image?name=${encodeURIComponent(workflow.name)}&limit=5`)
+      .then((r) => r.json())
+      .then(({ urls }: { urls: string[] }) => {
+        if (urls.length) {
+          setImgList(urls);
+          storeWorkflowImage(workflow.id, urls[0]);
+          storeWorkflowImageList(workflow.id, urls);
+        }
+      })
+      .catch(() => {});
+  }, [workflow.id, workflow.name, imgList.length]);
+
+  function cycleImage(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (imgList.length < 2) return;
+    const next = (imgIdx + 1) % imgList.length;
+    setImgIdx(next);
+    storeWorkflowImage(workflow.id, imgList[next]);
+  }
 
   return (
     <div className="group relative rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-200">
       <button onClick={onClick} className="w-full text-left focus:outline-none">
         <div
-          className="w-full aspect-square flex items-end p-3"
-          style={imgUrl
-            ? { backgroundImage: `url(${imgUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-            : { background: cardGradient(workflow.id) }}
+          className="w-full aspect-square flex items-end p-3 relative"
+          style={{ background: cardGradient(workflow.id) }}
         >
-          <span className="text-white text-sm font-semibold leading-snug drop-shadow-md line-clamp-2">
-            {workflow.name}
+          {imgUrl && (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={imgUrl}
+                alt=""
+                className="absolute inset-0 w-full h-full object-cover"
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              />
+            </>
+          )}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+          <span className="relative z-10 text-white text-sm font-semibold leading-snug drop-shadow-md line-clamp-2">
+            {toTitleCase(workflow.name)}
           </span>
         </div>
-        <div className="px-1 pt-1.5 pb-2">
-          <p className="text-xs text-gray-400">{formatDate(workflow.updatedAt)}</p>
-        </div>
       </button>
+
+      {/* Cycle image button — shown on hover when multiple images available */}
+      {imgList.length > 1 && (
+        <button
+          onClick={cycleImage}
+          title="Next photo"
+          className="absolute top-2 left-2 w-7 h-7 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+          </svg>
+        </button>
+      )}
 
       {/* Delete button shown on hover */}
       <button

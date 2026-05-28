@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { useMutation, useConvex } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
@@ -20,12 +20,15 @@ const INPUT = 'w-full px-4 py-3 border border-gray-200 rounded-full text-sm plac
 // ─── Main auth page ───────────────────────────────────────────────────────────
 export default function AuthPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const convex = useConvex();
   const createUser = useMutation(api.users.createUser);
   const updatePassword = useMutation(api.users.updateUserPassword);
   const saveApiKey = useMutation(api.users.setApiKey);
   const [mounted, setMounted] = useState(false);
-  const [mode, setMode] = useState<Mode>('login');
+  const [mode, setMode] = useState<Mode>(() =>
+    searchParams.get('mode') === 'signup' ? 'signup' : 'login'
+  );
 
   // shared
   const [email, setEmail] = useState('');
@@ -126,7 +129,14 @@ export default function AuthPage() {
         if (existing) { setError('An account with this email already exists.'); return; }
 
         const hash = await hashPassword(password);
-        const convexId = await createUser({ name: name.trim(), email: normalizedEmail, passwordHash: hash });
+        const convexId = await createUser({
+          name: name.trim(),
+          email: normalizedEmail,
+          passwordHash: hash,
+          phoneNumber: phone.trim() || undefined,
+          organizationName: organization.trim() || undefined,
+          roleInOrganization: orgRole.trim() || undefined,
+        });
 
         const hasApiKey = showApiKey && apiKeyDesc.trim() && apiKeyValue.trim();
         if (hasApiKey) {

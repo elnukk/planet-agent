@@ -45,7 +45,7 @@ export const createWorkflow = mutation({
     ),
     dataFrequency: v.union(
       v.literal("daily"), v.literal("weekly"),
-      v.literal("monthly"), v.literal("quarterly")
+      v.literal("monthly"), v.literal("quarterly"), v.literal("yearly")
     ),
     region: v.any(),
     dateRange: v.object({ start: v.string(), end: v.string() }),

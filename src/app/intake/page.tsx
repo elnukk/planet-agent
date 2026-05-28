@@ -7,7 +7,6 @@ import { useMutation } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import type { Id } from '../../../convex/_generated/dataModel';
 import { getCurrentUser } from '@/lib/auth';
-import { storeWorkflowImage } from '@/lib/workflowImages';
 import { type IntakeJSON } from '@/lib/workflowIntake';
 import planetLogo from '../dashboard/planetlogo.png';
 
@@ -23,11 +22,12 @@ function inferTimeFrame(start: string, end: string): "3mo" | "6mo" | "1yr" | "2y
   return 'custom';
 }
 
-function mapFrequency(f: string): "daily" | "weekly" | "monthly" | "quarterly" {
+function mapFrequency(f: string): "daily" | "weekly" | "monthly" | "quarterly" | "yearly" {
   const lower = f.toLowerCase();
   if (lower === 'daily') return 'daily';
   if (lower === 'weekly') return 'weekly';
   if (lower === 'quarterly') return 'quarterly';
+  if (lower === 'yearly') return 'yearly';
   return 'monthly';
 }
 
@@ -40,7 +40,7 @@ function mapTemporalResolution(tr: string | undefined): "daily" | "weekly" | "bi
 }
 
 const TEAL = '#009DA5';
-type Frequency = 'Daily' | 'Weekly' | 'Monthly' | 'Quarterly' | '';
+type Frequency = 'Daily' | 'Weekly' | 'Monthly' | 'Quarterly' | 'Yearly' | '';
 
 const FALLBACK_QUESTIONS: string[] = [
   'What specific environmental or land-use indicators are you tracking?',
@@ -265,7 +265,7 @@ function StepTimeFrame({ startDate, endDate, frequency, onStartDate, onEndDate, 
         <div>
           <label className="block text-xs font-semibold text-gray-600 mb-1.5">Data Frequency</label>
           <div className="flex gap-2 flex-wrap">
-            {(['Daily', 'Weekly', 'Monthly', 'Quarterly'] as Frequency[]).map((f) => (
+            {(['Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly'] as Frequency[]).map((f) => (
               <button key={f} onClick={() => onFrequency(f)}
                 className="px-4 py-2 rounded-full text-sm font-medium border-2 transition-all"
                 style={{
@@ -391,7 +391,6 @@ function StepPlanetProduct({ value, onChange, onBack, onContinue }: {
 function StepRegion({ onFileLoad, onBack }: {
   onFileLoad: (name: string, geojson?: object) => void; onBack: () => void;
 }) {
-  const fileRef = useRef<HTMLInputElement>(null);
   const [regionText, setRegionText] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -457,27 +456,8 @@ function StepRegion({ onFileLoad, onBack }: {
   return (
     <div className="max-w-xl mx-auto">
       <h2 className="text-2xl font-bold text-gray-900 mb-2">What region are you interested in?</h2>
-      <p className="text-sm text-gray-500 mb-6">Upload a GeoJSON or KML file, or search for a place name below.</p>
+      <p className="text-sm text-gray-500 mb-6">Search for a place name or describe your region of interest.</p>
       <div className="bg-gray-100 rounded-2xl p-5 space-y-4">
-        <div
-          onDrop={handleDrop} onDragOver={(e) => e.preventDefault()}
-          onClick={() => fileRef.current?.click()}
-          className="rounded-xl border-2 border-dashed border-gray-300 px-6 py-12 flex flex-col items-center text-center cursor-pointer hover:border-teal-400 hover:bg-teal-50/50 transition-colors"
-        >
-          <svg className="w-12 h-12 text-gray-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5a4.5 4.5 0 0 1-1.41-8.775 5.25 5.25 0 0 1 10.338-2.32 5.75 5.75 0 0 1 1.323 11.096" />
-          </svg>
-          <p className="text-sm text-gray-600 font-medium">Drop a GeoJSON or KML file, or click to browse</p>
-          <p className="text-xs text-gray-400 mt-1">Supported: .geojson, .kml, .json</p>
-          <input ref={fileRef} type="file" accept=".geojson,.kml,.json" className="hidden" onChange={handleFileChange} />
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="flex-1 h-px bg-gray-200" />
-          <span className="text-xs text-gray-400">or</span>
-          <div className="flex-1 h-px bg-gray-200" />
-        </div>
-
         <div className="relative">
           <div className="flex gap-2">
             <input
@@ -657,32 +637,54 @@ function StepLoading({
 
 // ─── Step 7: Follow-up questions with dot navigation ─────────────────────────
 function StepQuestions({
-  questions, answers, currentIdx, regenerating,
-  onAnswer, onSetIdx, onBack, onFinish, onRegenerate,
+  questions, answers, currentIdx,
+  regenerating, generatingNext,
+  attachments,
+  onAnswer, onAdvance, onSetIdx, onBack, onAttach, onRemoveAttachment, onRegenerate,
 }: {
   questions: string[];
   answers: string[];
   currentIdx: number;
   regenerating: boolean;
+  generatingNext: boolean;
+  attachments: Record<number, { name: string; content: string }>;
   onAnswer: (idx: number, val: string) => void;
+  onAdvance: (idx: number) => void;
   onSetIdx: (idx: number) => void;
   onBack: () => void;
-  onFinish: () => void;
+  onAttach: (idx: number, file: { name: string; content: string }) => void;
+  onRemoveAttachment: (idx: number) => void;
   onRegenerate: () => void;
 }) {
-  const isLast = currentIdx === questions.length - 1;
-  const canContinue = !!answers[currentIdx]?.trim();
-  const allAnswered = questions.every((_, i) => !!answers[i]?.trim());
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const questionLoaded = !!questions[currentIdx];
+  const canContinue = questionLoaded && !!answers[currentIdx]?.trim() && !generatingNext;
+  const attachment = attachments[currentIdx];
+
+  // Dots: one per answered question + current + loading dot if fetching next
+  const dotCount = Math.max(questions.length, currentIdx + 1);
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const content = (ev.target?.result as string) ?? '';
+      onAttach(currentIdx, { name: file.name, content });
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
 
   return (
     <div className="max-w-xl mx-auto">
       <div className="flex items-center justify-between mb-5">
         <span className="text-xs font-semibold text-gray-400 uppercase tracking-widest">
-          Follow-up Question {currentIdx + 1} of {questions.length}
+          Follow-up Question {currentIdx + 1}
         </span>
         <button
           onClick={onRegenerate}
-          disabled={regenerating}
+          disabled={regenerating || !questionLoaded}
           className="flex items-center gap-1.5 text-xs font-medium px-3 py-1 rounded-full border transition-all disabled:opacity-50"
           style={{ color: TEAL, borderColor: TEAL }}
         >
@@ -705,8 +707,9 @@ function StepQuestions({
         </button>
       </div>
 
+      {/* Dynamic progress dots */}
       <div className="flex items-center justify-center mb-7">
-        {questions.map((_, i) => {
+        {Array.from({ length: dotCount }).map((_, i) => {
           const answered = i < currentIdx || (i === currentIdx && !!answers[i]?.trim());
           const isCurrent = i === currentIdx;
           return (
@@ -723,31 +726,79 @@ function StepQuestions({
                   cursor: i < currentIdx ? 'pointer' : 'default',
                 }}
               />
-              {i < questions.length - 1 && (
-                <div
-                  className="h-0.5 w-8 transition-all duration-300"
-                  style={{ backgroundColor: i < currentIdx ? TEAL : '#e5e7eb' }}
-                />
+              {i < dotCount - 1 && (
+                <div className="h-0.5 w-8 transition-all duration-300"
+                  style={{ backgroundColor: i < currentIdx ? TEAL : '#e5e7eb' }} />
               )}
             </div>
           );
         })}
+        {/* Loading dot when fetching next question */}
+        {generatingNext && (
+          <div className="flex items-center">
+            <div className="h-0.5 w-8" style={{ backgroundColor: '#e5e7eb' }} />
+            <div className="w-2.5 h-2.5 rounded-full animate-pulse" style={{ backgroundColor: TEAL, opacity: 0.5 }} />
+          </div>
+        )}
       </div>
 
-      <h2 className="text-2xl font-bold text-gray-900 mb-6">
-        {regenerating ? '…' : questions[currentIdx]}
-      </h2>
+      {!questionLoaded ? (
+        <div className="flex flex-col items-center justify-center py-12 gap-4">
+          <div className="w-8 h-8 rounded-full border-4 border-t-transparent animate-spin"
+            style={{ borderColor: `${TEAL} ${TEAL} ${TEAL} transparent` }} />
+          <p className="text-sm text-gray-400">Generating next question…</p>
+        </div>
+      ) : (
+        <>
+          <h2 className="text-2xl font-bold text-gray-900 mb-6">
+            {regenerating ? '…' : questions[currentIdx]}
+          </h2>
+          <div className="bg-gray-100 rounded-2xl p-5 space-y-3">
+            <textarea
+              key={`${currentIdx}-${questions[currentIdx]}`}
+              value={answers[currentIdx] ?? ''}
+              onChange={(e) => onAnswer(currentIdx, e.target.value)}
+              placeholder="Type your answer here…"
+              rows={5}
+              className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-100 resize-none transition"
+            />
 
-      <div className="bg-gray-100 rounded-2xl p-5">
-        <textarea
-          key={`${currentIdx}-${questions[currentIdx]}`}
-          value={answers[currentIdx] ?? ''}
-          onChange={(e) => onAnswer(currentIdx, e.target.value)}
-          placeholder="Type your answer here…"
-          rows={6}
-          className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-100 resize-none transition"
-        />
-      </div>
+            {/* File attachment area */}
+            {attachment ? (
+              <div className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs text-gray-600">
+                <svg className="w-3.5 h-3.5 flex-shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13" />
+                </svg>
+                <span className="flex-1 truncate font-medium">{attachment.name}</span>
+                <button onClick={() => onRemoveAttachment(currentIdx)} className="text-gray-400 hover:text-red-500 transition-colors ml-1">
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            ) : (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  accept=".txt,.csv,.json,.geojson,.kml,.md,.ipynb,.py"
+                  onChange={handleFileChange}
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13" />
+                  </svg>
+                  Attach a file (CSV, GeoJSON, notebook, etc.)
+                </button>
+              </>
+            )}
+          </div>
+        </>
+      )}
 
       <div className="flex justify-between pt-6">
         <button
@@ -757,16 +808,66 @@ function StepQuestions({
           Back
         </button>
         <button
-          onClick={isLast ? onFinish : () => onSetIdx(currentIdx + 1)}
-          disabled={isLast ? !allAnswered : !canContinue}
+          onClick={() => onAdvance(currentIdx + 1)}
+          disabled={!canContinue}
           className="px-8 py-2.5 rounded-full text-sm font-semibold text-white disabled:opacity-40 transition-colors"
           style={{ backgroundColor: TEAL }}
         >
-          {isLast ? 'Finish' : 'Continue'}
+          {generatingNext ? (
+            <span className="flex items-center gap-2">
+              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Thinking…
+            </span>
+          ) : 'Continue'}
         </button>
       </div>
     </div>
   );
+}
+
+// ─── Title helpers ────────────────────────────────────────────────────────────
+const TC_SKIP = new Set(['a','an','the','and','but','or','for','nor','on','at','to','by','in','of','up','as','is']);
+function toTitleCase(str: string): string {
+  return str.split(' ').map((w, i, arr) =>
+    i === 0 || i === arr.length - 1 || !TC_SKIP.has(w.toLowerCase())
+      ? w.charAt(0).toUpperCase() + w.slice(1)
+      : w.toLowerCase()
+  ).join(' ');
+}
+
+function extractTitle(useCase: string): string {
+  const line = useCase.trim().split('\n')[0].trim();
+  const stripped = line
+    // remove "I want/need/would like/am trying to [verb]" openers
+    .replace(/^i\s+(want|need|would\s+like|am\s+trying|am\s+looking|hope|plan|wish)\s+(to\s+)?/i, '')
+    // remove a leading action verb if that's now the first word
+    .replace(/^(detect|identify|track|monitor|map|analyze|analyse|study|assess|measure|find|locate|understand|build|create|develop)\s+/i, '')
+    .trim();
+  return toTitleCase((stripped || line).slice(0, 55)) || 'New Workflow';
+}
+
+const CARD_GRADIENTS = [
+  'linear-gradient(135deg, #FF7043 0%, #BF360C 100%)',
+  'linear-gradient(135deg, #66BB6A 0%, #1B5E20 100%)',
+  'linear-gradient(135deg, #42A5F5 0%, #0D47A1 100%)',
+  'linear-gradient(135deg, #AB47BC 0%, #4A148C 100%)',
+  'linear-gradient(135deg, #FFA726 0%, #E65100 100%)',
+  'linear-gradient(135deg, #26C6DA 0%, #006064 100%)',
+  'linear-gradient(135deg, #EC407A 0%, #880E4F 100%)',
+  'linear-gradient(135deg, #9CCC65 0%, #33691E 100%)',
+  'linear-gradient(135deg, #5C6BC0 0%, #1A237E 100%)',
+  'linear-gradient(135deg, #26A69A 0%, #004D40 100%)',
+  'linear-gradient(135deg, #FFCA28 0%, #F57F17 100%)',
+  'linear-gradient(135deg, #FF5252 0%, #B71C1C 100%)',
+];
+
+function pickGradient(seed: string): string {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = ((h << 5) - h + seed.charCodeAt(i)) | 0;
+  return CARD_GRADIENTS[Math.abs(h) % CARD_GRADIENTS.length];
 }
 
 // ─── Step 8: Summary + workflow creation ──────────────────────────────────────
@@ -781,18 +882,21 @@ function StepSummary({ useCase, startDate, endDate, frequency, fileName, regionG
   answers: string[];
   questions: string[];
   onStartOver: () => void;
+  onEditAnswers: () => void;
 }) {
   const router = useRouter();
   const createConvexWorkflow = useMutation(api.workflows.createWorkflow);
   const [workflowName, setWorkflowName] = useState(
-    () => useCase.trim().split('\n')[0].trim().slice(0, 60) || 'New Workflow'
+    () => extractTitle(useCase) || 'New Workflow'
   );
   const [creating, setCreating] = useState(false);
-  const [aiImageDataUrl, setAiImageDataUrl] = useState<string | null>(null);
   const [generatingMeta, setGeneratingMeta] = useState(true);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const intakeRef = useRef<IntakeJSON | null>(null);
 
   useEffect(() => {
+    const initialTitle = extractTitle(useCase) || 'New Workflow';
+
     Promise.allSettled([
       fetch('/api/generate-workflow', {
         method: 'POST',
@@ -805,14 +909,19 @@ function StepSummary({ useCase, startDate, endDate, frequency, fileName, regionG
         body: JSON.stringify({ useCaseDescription: useCase, region: fileName, startDate, endDate, frequency, planetProduct, questions, answers }),
       }).then((r) => r.json()),
     ]).then(([metaResult, intakeResult]) => {
-      if (metaResult.status === 'fulfilled') {
-        const data = metaResult.value;
-        if (data.name) setWorkflowName(data.name);
-        if (data.imageDataUrl) setAiImageDataUrl(data.imageDataUrl);
-      }
+      const aiName = metaResult.status === 'fulfilled' && metaResult.value?.name
+        ? toTitleCase(metaResult.value.name)
+        : null;
+      if (aiName) setWorkflowName(aiName);
       if (intakeResult.status === 'fulfilled' && intakeResult.value?.intake) {
         intakeRef.current = intakeResult.value.intake;
       }
+      // Fetch image using the same name the dashboard card will use
+      const imageQuery = aiName ?? initialTitle;
+      fetch(`/api/workflow-image?name=${encodeURIComponent(imageQuery)}&limit=1`)
+        .then((r) => r.json())
+        .then(({ urls }: { urls: string[] }) => { if (urls?.length) setPhotoUrl(urls[0]); })
+        .catch(() => {});
     }).finally(() => setGeneratingMeta(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -845,7 +954,6 @@ function StepSummary({ useCase, startDate, endDate, frequency, fileName, regionG
         notebookCells: [],
         sourceNotebooks: [],
       });
-      if (aiImageDataUrl) storeWorkflowImage(convexId as string, aiImageDataUrl);
       router.push(`/workflow/${convexId}`);
     } finally {
       setCreating(false);
@@ -859,6 +967,8 @@ function StepSummary({ useCase, startDate, endDate, frequency, fileName, regionG
     { label: 'Region', value: fileName || '—' },
     ...questions.map((q, i) => ({ label: `Q${i + 1}: ${q.slice(0, 40)}…`, value: answers[i] || '—' })),
   ];
+
+  const gradient = pickGradient(workflowName);
 
   return (
     <div className="max-w-xl mx-auto">
@@ -878,11 +988,16 @@ function StepSummary({ useCase, startDate, endDate, frequency, fileName, regionG
         <div className="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0">
           {generatingMeta ? (
             <div className="w-full h-full bg-gray-200 animate-pulse" />
-          ) : aiImageDataUrl ? (
+          ) : photoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={aiImageDataUrl} alt="card preview" className="w-full h-full object-cover" />
+            <img
+              src={photoUrl}
+              alt="card preview"
+              className="w-full h-full object-cover"
+              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+            />
           ) : (
-            <div className="w-full h-full bg-gradient-to-br from-cyan-400 to-teal-700" />
+            <div className="w-full h-full" style={{ background: gradient }} />
           )}
         </div>
         <div className="flex-1">
@@ -901,10 +1016,17 @@ function StepSummary({ useCase, startDate, endDate, frequency, fileName, regionG
       </div>
 
       <div className="flex justify-between pt-4">
-        <button onClick={onStartOver}
-          className="px-6 py-2.5 rounded-full text-sm font-medium text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors">
-          Start Over
-        </button>
+        <div className="flex gap-2">
+          <button onClick={onStartOver}
+            className="px-6 py-2.5 rounded-full text-sm font-medium text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors">
+            Start Over
+          </button>
+          <button onClick={onEditAnswers}
+            className="px-6 py-2.5 rounded-full text-sm font-medium border transition-colors"
+            style={{ color: TEAL, borderColor: TEAL }}>
+            Edit Answers
+          </button>
+        </div>
         <button
           onClick={handleCreate}
           disabled={!workflowName.trim() || creating}
@@ -918,6 +1040,10 @@ function StepSummary({ useCase, startDate, endDate, frequency, fileName, regionG
   );
 }
 
+const MAX_QUESTIONS = 5;
+// Sufficiency check starts after this many questions have been answered
+const SUFFICIENCY_CHECK_AFTER = 2;
+
 // ─── Root page ────────────────────────────────────────────────────────────────
 export default function IntakePage() {
   const [step, setStep] = useState(1);
@@ -928,11 +1054,16 @@ export default function IntakePage() {
   const [frequency, setFrequency] = useState<Frequency>('');
   const [planetProduct, setPlanetProduct] = useState<string[]>([]);
   const [regionFileName, setRegionFileName] = useState('');
+  
+  const [aiQuestions, setAiQuestions] = useState<string[]>([]);
+  const [answers, setAnswers] = useState<string[]>([]);
+  const [attachments, setAttachments] = useState<Record<number, { name: string; content: string }>>({});
+  
   const [regionGeoJSON, setRegionGeoJSON] = useState<object | null>(null);
-  const [aiQuestions, setAiQuestions] = useState<string[]>(FALLBACK_QUESTIONS);
-  const [answers, setAnswers] = useState<string[]>(['', '', '']);
+ 
   const [currentQIdx, setCurrentQIdx] = useState(0);
   const [regenerating, setRegenerating] = useState(false);
+  const [generatingNext, setGeneratingNext] = useState(false);
 
   function setAnswer(idx: number, val: string) {
     setAnswers((prev) => {
@@ -942,8 +1073,87 @@ export default function IntakePage() {
     });
   }
 
+  function handleAttach(idx: number, file: { name: string; content: string }) {
+    setAttachments((prev) => ({ ...prev, [idx]: file }));
+  }
+
+  function handleRemoveAttachment(idx: number) {
+    setAttachments((prev) => {
+      const next = { ...prev };
+      delete next[idx];
+      return next;
+    });
+  }
+
+  function buildAttachedFiles(upToIndex: number) {
+    return Object.entries(attachments)
+      .filter(([i]) => parseInt(i) <= upToIndex)
+      .map(([, file]) => ({ name: file.name, content: file.content }));
+  }
+
+  async function fetchAdaptiveQuestion(
+    forIndex: number,
+    currentQuestions: string[],
+    currentAnswers: string[],
+    currentUseCase: string,
+    currentRegion: string,
+    currentProduct: string,
+  ): Promise<'done' | 'question'> {
+    setGeneratingNext(true);
+    const previousQA = currentQuestions
+      .slice(0, forIndex)
+      .map((question, i) => ({ question, answer: currentAnswers[i] || '' }))
+      .filter(({ answer }) => answer.trim());
+    const checkSufficiency = forIndex >= SUFFICIENCY_CHECK_AFTER && forIndex < MAX_QUESTIONS;
+    try {
+      const res = await fetch('/api/intake-questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          useCase: currentUseCase,
+          region: currentRegion,
+          dateRange: `${startDate} to ${endDate}`,
+          planetProduct: currentProduct,
+          singleQuestion: true,
+          existingQuestions: currentQuestions.slice(0, forIndex),
+          previousQA,
+          checkSufficiency,
+          attachedFiles: buildAttachedFiles(forIndex - 1),
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.done) {
+          setGeneratingNext(false);
+          setStep(8);
+          return 'done';
+        }
+        const q: string = data.questions?.[0];
+        if (q) {
+          setAiQuestions((prev) => {
+            const next = [...prev];
+            next[forIndex] = q;
+            return next;
+          });
+          setAnswers((prev) => {
+            if (prev.length > forIndex) return prev;
+            const next = [...prev];
+            next[forIndex] = '';
+            return next;
+          });
+        }
+      }
+    } catch {}
+    setGeneratingNext(false);
+    return 'question';
+  }
+
   async function handleRegenerate() {
     setRegenerating(true);
+    const previousQA = aiQuestions
+      .slice(0, currentQIdx)
+      .map((question, i) => ({ question, answer: answers[i] || '' }))
+      .filter(({ answer }) => answer.trim());
     try {
       const res = await fetch('/api/intake-questions', {
         method: 'POST',
@@ -956,6 +1166,8 @@ export default function IntakePage() {
           singleQuestion: true,
           existingQuestions: aiQuestions,
           replaceIndex: currentQIdx,
+          previousQA,
+          attachedFiles: buildAttachedFiles(currentQIdx),
         }),
       });
       if (res.ok) {
@@ -970,6 +1182,26 @@ export default function IntakePage() {
     setRegenerating(false);
   }
 
+  function handleAdvance(toIdx: number) {
+    if (toIdx >= MAX_QUESTIONS) {
+      setStep(8);
+      return;
+    }
+    setCurrentQIdx(toIdx);
+    if (!aiQuestions[toIdx]) {
+      fetchAdaptiveQuestion(toIdx, aiQuestions, answers, useCase, regionFileName, planetProduct.join(', '));
+    }
+  }
+
+  function enterQuestions() {
+    setAiQuestions([]);
+    setAnswers([]);
+    setAttachments({});
+    setCurrentQIdx(0);
+    setStep(7);
+    fetchAdaptiveQuestion(0, [], [], useCase, regionFileName, planetProduct.join(', '));
+  }
+
   function reset() {
     setStep(1);
     setUseCase('');
@@ -978,9 +1210,13 @@ export default function IntakePage() {
     setFrequency('');
     setPlanetProduct([]);
     setRegionFileName('');
+    
+    setAiQuestions([]);
+    setAnswers([]);
+    setAttachments({});
+    
     setRegionGeoJSON(null);
-    setAiQuestions(FALLBACK_QUESTIONS);
-    setAnswers(['', '', '']);
+    
     setCurrentQIdx(0);
   }
 
@@ -988,24 +1224,6 @@ export default function IntakePage() {
     setRegionFileName(name);
     setRegionGeoJSON(geojson ?? null);
     setStep(5);
-  }
-
-  if (step === 6) {
-    return (
-      <StepLoading
-        useCase={useCase}
-        region={regionFileName}
-        startDate={startDate}
-        endDate={endDate}
-        planetProduct={planetProduct.join(', ')}
-        onDone={(qs) => {
-          setAiQuestions(qs);
-          setAnswers(new Array(qs.length).fill(''));
-          setCurrentQIdx(0);
-          setStep(7);
-        }}
-      />
-    );
   }
 
   return (
@@ -1043,7 +1261,7 @@ export default function IntakePage() {
             geojson={regionGeoJSON ?? undefined}
             onReupload={() => { setRegionFileName(''); setRegionGeoJSON(null); setStep(4); }}
             onBack={() => setStep(4)}
-            onContinue={() => setStep(6)}
+            onContinue={enterQuestions}
           />
         )}
 
@@ -1053,10 +1271,14 @@ export default function IntakePage() {
             answers={answers}
             currentIdx={currentQIdx}
             regenerating={regenerating}
+            generatingNext={generatingNext}
+            attachments={attachments}
             onAnswer={setAnswer}
+            onAdvance={handleAdvance}
             onSetIdx={setCurrentQIdx}
             onBack={() => setStep(5)}
-            onFinish={() => setStep(8)}
+            onAttach={handleAttach}
+            onRemoveAttachment={handleRemoveAttachment}
             onRegenerate={handleRegenerate}
           />
         )}
@@ -1073,6 +1295,10 @@ export default function IntakePage() {
             answers={answers}
             questions={aiQuestions}
             onStartOver={reset}
+            onEditAnswers={() => {
+              setCurrentQIdx(aiQuestions.length - 1);
+              setStep(7);
+            }}
           />
         )}
 
