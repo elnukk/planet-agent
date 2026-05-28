@@ -129,6 +129,8 @@ export const updateUser = mutation({
 export const deleteUser = mutation({
   args: { id: v.id("users") },
   handler: async (ctx, { id }) => {
+    const user = await ctx.db.get(id);
+    if (!user) return;
     const workflows = await ctx.db
       .query("workflows")
       .withIndex("by_userId", (q) => q.eq("userId", id))

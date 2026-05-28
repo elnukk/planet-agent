@@ -391,21 +391,9 @@ function StepPlanetProduct({ value, onChange, onBack, onContinue }: {
 function StepRegion({ onFileLoad, onBack }: {
   onFileLoad: (name: string) => void; onBack: () => void;
 }) {
-  const fileRef = useRef<HTMLInputElement>(null);
   const [regionText, setRegionText] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  function handleDrop(e: React.DragEvent) {
-    e.preventDefault();
-    const file = e.dataTransfer.files?.[0];
-    if (file) onFileLoad(file.name);
-  }
-
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (file) onFileLoad(file.name);
-  }
 
   function handleTextChange(val: string) {
     setRegionText(val);
@@ -439,27 +427,8 @@ function StepRegion({ onFileLoad, onBack }: {
   return (
     <div className="max-w-xl mx-auto">
       <h2 className="text-2xl font-bold text-gray-900 mb-2">What region are you interested in?</h2>
-      <p className="text-sm text-gray-500 mb-6">Upload a GeoJSON or KML file, or search for a place name below.</p>
+      <p className="text-sm text-gray-500 mb-6">Search for a place name or describe your region of interest.</p>
       <div className="bg-gray-100 rounded-2xl p-5 space-y-4">
-        <div
-          onDrop={handleDrop} onDragOver={(e) => e.preventDefault()}
-          onClick={() => fileRef.current?.click()}
-          className="rounded-xl border-2 border-dashed border-gray-300 px-6 py-12 flex flex-col items-center text-center cursor-pointer hover:border-teal-400 hover:bg-teal-50/50 transition-colors"
-        >
-          <svg className="w-12 h-12 text-gray-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5a4.5 4.5 0 0 1-1.41-8.775 5.25 5.25 0 0 1 10.338-2.32 5.75 5.75 0 0 1 1.323 11.096" />
-          </svg>
-          <p className="text-sm text-gray-600 font-medium">Drop a GeoJSON or KML file, or click to browse</p>
-          <p className="text-xs text-gray-400 mt-1">Supported: .geojson, .kml, .json</p>
-          <input ref={fileRef} type="file" accept=".geojson,.kml,.json" className="hidden" onChange={handleFileChange} />
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="flex-1 h-px bg-gray-200" />
-          <span className="text-xs text-gray-400">or</span>
-          <div className="flex-1 h-px bg-gray-200" />
-        </div>
-
         <div className="relative">
           <div className="flex gap-2">
             <input
