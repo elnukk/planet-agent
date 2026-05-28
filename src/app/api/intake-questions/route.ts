@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
     previousQA, checkSufficiency, attachedFiles,
   } = await req.json();
 
-  const context = `User context:
+  const context = `Already known (do NOT ask about any of these):
 - Use case: ${useCase}
 - Region: ${region}
 - Time range: ${dateRange}
@@ -37,48 +37,60 @@ export async function POST(req: NextRequest) {
         .join('\n\n')}`
     : '';
 
+  const systemPrompt = `You are helping generate a Jupyter notebook that uses Planet satellite imagery APIs to fulfill the user's analysis goal. Your job is to ask only the questions whose answers would directly change what code gets written in that notebook.
+
+NEVER ask about:
+- Data collection strategies, field visits, or ground truth collection
+- Whether the user has existing data or historical records
+- Feasibility, data availability, or access constraints
+- Temporal resolution, frequency, or date ranges (already set)
+- Region or area of interest (already set)
+- Which Planet product to use (already set)
+- General goals or background context already captured
+
+ONLY ask about things that parameterize the notebook code, such as:
+- Specific spectral indices or algorithms to compute (e.g. NDVI vs EVI vs custom band math)
+- Output format or deliverables (e.g. GeoTIFF export, CSV statistics, interactive map, charts)
+- Thresholds, alert conditions, or classification cutoffs the analysis should apply
+- Comparison baselines (e.g. compare to a reference year, a control field, a baseline period)
+- Specific crop stages, events, or anomalies to detect or highlight
+- Any masking or filtering logic (e.g. cloud threshold, minimum field size)
+- Visualization preferences that affect the notebook output (e.g. false color composites, specific color ramps)`;
+
   const prompt = singleQuestion
-    ? `You are an assistant helping a user build a satellite data analysis workflow using Planet APIs.
+    ? `${systemPrompt}
 
 ${context}${prevContext}${fileContext}
 
 ${typeof replaceIndex === 'number'
-  ? `The user wants to replace this question:\n"${targetQuestion}"\n\nThese other questions will stay (do NOT generate something on the same topic as any of these):\n${otherQuestions.map((q: string) => `- ${q}`).join('\n')}\n\nGenerate exactly ONE replacement question.
-
-The question must be plain, conversational, and specific to the user's context.
+  ? `The user wants to replace this question:\n"${targetQuestion}"\n\nThese other questions will stay (do NOT generate something on the same topic as any of these):\n${otherQuestions.map((q: string) => `- ${q}`).join('\n')}\n\nGenerate exactly ONE replacement question that would change what code gets written in the notebook.
 
 Respond ONLY with a JSON array containing exactly one question string:
 ["Question?"]`
   : checkSufficiency
   ? `Questions already asked (do NOT repeat these topics):\n${asked.length ? asked.map((q: string) => `- ${q}`).join('\n') : '(none yet)'}
 
-Review the information collected. You now know the use case, region, time range, product, and the user's answers above.
+Review the information collected. Decide: do you have enough notebook-parameterizing information to write a specific, complete analysis notebook?
 
-Decide: do you have enough information to build a comprehensive, specific satellite analysis workflow?
-Consider it sufficient if you understand: the analysis goal, what outputs/deliverables are needed, any comparison baseline or thresholds, and key constraints or existing data.
-Consider it insufficient if a critical unknown would significantly change the workflow design.
+Consider it sufficient if you know: what to compute/detect, what outputs to produce, and any key thresholds or comparisons needed.
+Consider it insufficient only if a missing answer would cause you to write fundamentally different notebook code.
 
 If sufficient → respond ONLY with: {"done": true}
 If one more question is genuinely needed → respond ONLY with a JSON array: ["Question?"]`
-  : `Questions already asked (do NOT repeat these topics):\n${asked.length ? asked.map((q: string) => `- ${q}`).join('\n') : '(none yet)'}\n\nGenerate exactly ONE next follow-up question.
-
-The question must:
-- Be informed by the user's answers above (if any)
-- Cover an aspect not yet addressed
-- Be plain, conversational, and specific to the user's context
+  : `Questions already asked (do NOT repeat these topics):\n${asked.length ? asked.map((q: string) => `- ${q}`).join('\n') : '(none yet)'}\n\nGenerate exactly ONE next question whose answer would directly change what code gets written in the notebook.
 
 Respond ONLY with a JSON array containing exactly one question string:
 ["Question?"]`}`
-    : `You are an assistant helping a user build a satellite data analysis workflow using Planet APIs.
+    : `${systemPrompt}
 
 ${context}
 
-Generate between 3 and 5 follow-up questions that will help clarify exactly what this user needs.
+Generate between 3 and 5 questions whose answers would directly determine what code gets written in the notebook.
 
 Rules:
-- Each question should uncover a different aspect of the user's requirements (e.g. output format, alert thresholds, comparison baseline, priority species/indicators, access constraints).
+- Each question must uncover a different code-level parameter (index/algorithm choice, output format, threshold, baseline, masking logic, visualization).
 - Do not ask for information already provided above.
-- Questions should be plain, conversational, and specific to the user's context.
+- Questions must be plain, conversational, and specific to the user's context.
 
 Respond ONLY with a JSON array of 3–5 question strings, no explanation, no markdown fences:
 ["Question 1?", "Question 2?", ...]`;

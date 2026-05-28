@@ -489,6 +489,23 @@ function StepRegion({ onFileLoad, onBack }: {
             </ul>
           )}
         </div>
+        <div className="flex items-center gap-3 text-xs text-gray-400">
+          <div className="flex-1 border-t border-gray-300" />
+          <span>or</span>
+          <div className="flex-1 border-t border-gray-300" />
+        </div>
+        <label
+          onDrop={handleDrop}
+          onDragOver={(e) => e.preventDefault()}
+          className="flex flex-col items-center justify-center gap-2 bg-white border-2 border-dashed border-gray-300 rounded-xl px-4 py-5 cursor-pointer hover:border-cyan-400 transition-colors text-center"
+        >
+          <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+          </svg>
+          <span className="text-sm text-gray-500">Upload a GeoJSON file</span>
+          <span className="text-xs text-gray-400">Drag &amp; drop or click to browse</span>
+          <input type="file" accept=".geojson,.json" className="hidden" onChange={handleFileChange} />
+        </label>
       </div>
       <div className="flex justify-between pt-6">
         <button onClick={onBack} className="px-6 py-2.5 rounded-full text-sm font-medium text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors">Back</button>
@@ -871,7 +888,7 @@ function pickGradient(seed: string): string {
 }
 
 // ─── Step 8: Summary + workflow creation ──────────────────────────────────────
-function StepSummary({ useCase, startDate, endDate, frequency, fileName, regionGeoJSON, planetProduct, answers, questions, onStartOver }: {
+function StepSummary({ useCase, startDate, endDate, frequency, fileName, regionGeoJSON, planetProduct, answers, questions, onStartOver, onEditAnswers }: {
   useCase: string;
   startDate: string;
   endDate: string;
