@@ -20,10 +20,10 @@ export default function LandingPage() {
       <header className="flex items-center justify-between h-20 px-8 bg-black">
         <div className="text-white text-xl font-bold">Project Centinela</div>
         <nav className="flex items-center gap-6">
-          <Link href="/auth" className="text-sm text-white font-semibold hover:opacity-80 transition-opacity">
+          <Link href="/auth?mode=login" className="text-sm text-white font-semibold hover:opacity-80 transition-opacity">
             Sign In
           </Link>
-          <Link href="/auth" className="text-sm text-white font-semibold border border-white rounded-full px-5 py-2 hover:bg-white hover:text-black transition-colors">
+          <Link href="/auth?mode=signup" className="text-sm text-white font-semibold border border-white rounded-full px-5 py-2 hover:bg-white hover:text-black transition-colors">
             Get Started
           </Link>
         </nav>
@@ -35,7 +35,7 @@ export default function LandingPage() {
           CS + Social Good Studio · Stanford University
         </p>
         <h1 className="text-4xl sm:text-5xl font-bold max-w-3xl mx-auto leading-tight mb-6">
-          Satellite analysis for conservationists — no coding required
+          Satellite Analysis for Conservationists — No Coding Required
         </h1>
         <p className="text-gray-400 text-lg max-w-xl mx-auto mb-10 leading-relaxed">
           Planet Centinela gives conservation teams free access to high-quality satellite imagery.
@@ -43,7 +43,7 @@ export default function LandingPage() {
         </p>
         <div className="flex gap-4 justify-center flex-wrap">
           <Link
-            href="/auth"
+            href="/auth?mode=signup"
             className="px-8 py-3 rounded-full text-sm font-semibold text-white transition-opacity hover:opacity-90"
             style={{ backgroundColor: '#009DA5' }}
           >
@@ -61,7 +61,7 @@ export default function LandingPage() {
       {/* Context */}
       <section id="the-problem" className="py-20 px-8">
         <div className="max-w-3xl mx-auto">
-          <h2 className="text-2xl font-bold text-gray-900 mb-5">The problem we're solving</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-5">The Problem We're Solving</h2>
           <p className="text-gray-600 text-base leading-relaxed mb-4">
             Planet Centinela, developed by Planet Labs, provides free high-frequency satellite data
             to conservation organizations monitoring 50 of the world's most vulnerable biodiversity
@@ -81,7 +81,7 @@ export default function LandingPage() {
       {/* Features */}
       <section className="py-20 px-8">
         <div className="max-w-4xl mx-auto">
-          <h2 className="text-2xl font-bold text-gray-900 mb-12 text-center">What you can do</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-12 text-center">What You Can Do</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
 
             <div className="flex flex-col gap-3 p-6 border border-gray-100 rounded-2xl">
@@ -93,7 +93,7 @@ export default function LandingPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 0 2-2h2a2 2 0 0 0 2 2m-6 9 2 2 4-4" />
                 </svg>
               </div>
-              <h3 className="font-semibold text-gray-900">Guided workflow setup</h3>
+              <h3 className="font-semibold text-gray-900">Guided Workflow Setup</h3>
               <p className="text-sm text-gray-500 leading-relaxed">
                 Describe what you want to analyze in plain language. A step-by-step questionnaire
                 collects your use case, region, time range, and Planet product — then asks targeted
@@ -127,7 +127,7 @@ export default function LandingPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5" />
                 </svg>
               </div>
-              <h3 className="font-semibold text-gray-900">Runnable notebooks</h3>
+              <h3 className="font-semibold text-gray-900">Runnable Notebooks</h3>
               <p className="text-sm text-gray-500 leading-relaxed">
                 Each workflow produces a notebook-style page with commented code blocks and visual
                 outputs you can run directly in the browser. Inspect the underlying code, understand
@@ -142,7 +142,7 @@ export default function LandingPage() {
       {/* How we built it */}
       <section className="py-20 px-8 bg-black text-white">
         <div className="max-w-3xl mx-auto">
-          <h2 className="text-2xl font-bold mb-5">How we built it</h2>
+          <h2 className="text-2xl font-bold mb-5">How We Built It</h2>
           <p className="text-gray-400 text-base leading-relaxed">
             The frontend is built with Next.js and TypeScript, styled with Tailwind CSS. User data
             and workflows are stored and synced in real time using Convex. Follow-up questions and
@@ -167,7 +167,7 @@ export default function LandingPage() {
       {/* Team */}
       <section className="py-20 px-8">
         <div className="max-w-4xl mx-auto">
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">The team</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">The Team</h2>
           <p className="text-gray-500 text-sm mb-10">
             Built by Stanford students in CS + Social Good Studio (CS51/52), in partnership with Planet Labs.
           </p>
@@ -197,12 +197,12 @@ export default function LandingPage() {
 
       {/* CTA */}
       <section className="py-24 px-8 bg-black text-white text-center">
-        <h2 className="text-3xl font-bold mb-4">Ready to get started?</h2>
+        <h2 className="text-3xl font-bold mb-4">Ready to Get Started?</h2>
         <p className="text-gray-400 mb-8 max-w-sm mx-auto text-sm leading-relaxed">
           Create your first satellite analysis workflow in a few minutes.
         </p>
         <Link
-          href="/auth"
+          href="/auth?mode=signup"
           className="inline-block px-8 py-3 rounded-full text-sm font-semibold text-white transition-opacity hover:opacity-90"
           style={{ backgroundColor: '#009DA5' }}
         >

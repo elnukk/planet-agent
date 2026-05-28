@@ -44,8 +44,11 @@ export default defineSchema({
 
     // identity
     email: v.string(),
+    username: v.optional(v.string()),
     externalId: v.optional(v.string()),
     name: v.string(),
+
+    emailVerified: v.optional(v.boolean()),
 
     // ⚠️ DO NOT store raw passwords
     // use auth provider or hashed password only
@@ -89,7 +92,8 @@ export default defineSchema({
       v.literal("daily"),
       v.literal("weekly"),
       v.literal("monthly"),
-      v.literal("quarterly")
+      v.literal("quarterly"),
+      v.literal("yearly")
     ),
 
     // region intake (GeoJSON / KML / structured object from intake_bot.py)

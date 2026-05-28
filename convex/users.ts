@@ -74,6 +74,9 @@ export const createUser = mutation({
     name: v.string(),
     email: v.string(),
     passwordHash: v.optional(v.string()),
+    phoneNumber: v.optional(v.string()),
+    organizationName: v.optional(v.string()),
+    roleInOrganization: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -91,9 +94,9 @@ export const createUser = mutation({
       name: args.name,
       externalId: undefined,
       passwordHash: args.passwordHash,
-      phoneNumber: undefined,
-      organizationName: undefined,
-      roleInOrganization: undefined,
+      phoneNumber: args.phoneNumber,
+      organizationName: args.organizationName,
+      roleInOrganization: args.roleInOrganization,
       apiKeyDescription: undefined,
       apiKeyValue: undefined,
     });
