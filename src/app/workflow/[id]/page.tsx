@@ -440,13 +440,14 @@ export default function WorkflowPage() {
 
   useEffect(() => {
     if (!workflowId || workflowData === undefined || workflowData === null) return;
+    if (convexUserData === undefined) return; // wait for API key to load before assembling
     if (workflowData.notebookCells.length > 0) {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       return;
     }
     triggerAssembly(workflowData);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workflowData, workflowId]);
+  }, [workflowData, workflowId, convexUserData]);
 
   function retryAssembly() {
     if (!workflowData) return;
@@ -476,6 +477,7 @@ export default function WorkflowPage() {
     const targetCell = cells.find((c) => c.id === id);
     if (!targetCell) return;
 
+    if (convexUserData === undefined) return; // still loading
     if (!apiKeyValue) {
       setShowApiKeyPrompt(true);
       return;
@@ -526,6 +528,7 @@ export default function WorkflowPage() {
   }
 
   async function runAll() {
+    if (convexUserData === undefined) return; // still loading
     if (!apiKeyValue) {
       setShowApiKeyPrompt(true);
       return;

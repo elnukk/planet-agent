@@ -13,8 +13,8 @@ export async function POST(req: NextRequest) {
     const sandbox = await Sandbox.create({
       apiKey: process.env.E2B_API_KEY,
       envs: {
-        PL_API_KEY: typeof planetApiKey === 'string' ? planetApiKey : '',
-        PLANET_API_KEY: typeof planetApiKey === 'string' ? planetApiKey : '',
+        PL_API_KEY: typeof planetApiKey === 'string' ? planetApiKey.trim() : '',
+        PLANET_API_KEY: typeof planetApiKey === 'string' ? planetApiKey.trim() : '',
       },
     });
 
@@ -25,8 +25,14 @@ export async function POST(req: NextRequest) {
         : 'planet rasterio numpy pandas matplotlib plotly scikit-learn';
       await sandbox.commands.run(`pip install ${pkgList} -q`);
 
-      // 2. Write the code string cleanly to a file inside the sandbox
-      await sandbox.files.write('exec_cell.py', code);
+      // 2. Write the code string cleanly to a file inside the sandbox.
+      // Prepend explicit env var injection so the key is available regardless of
+      // whether E2B inherits sandbox-level envs in child processes.
+      const key = typeof planetApiKey === 'string' ? planetApiKey.trim() : '';
+      const envPreamble = key
+        ? `import os\nos.environ['PL_API_KEY'] = ${JSON.stringify(key)}\nos.environ['PLANET_API_KEY'] = ${JSON.stringify(key)}\n\n`
+        : '';
+      await sandbox.files.write('exec_cell.py', envPreamble + code);
 
       try {
         // 3. Execute user code file safely

@@ -389,11 +389,40 @@ function StepPlanetProduct({ value, onChange, onBack, onContinue }: {
 
 // ─── Step 4: Region ───────────────────────────────────────────────────────────
 function StepRegion({ onFileLoad, onBack }: {
-  onFileLoad: (name: string) => void; onBack: () => void;
+  onFileLoad: (name: string, geojson?: object) => void; onBack: () => void;
 }) {
   const [regionText, setRegionText] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function readAndLoad(file: File) {
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    if (ext === 'geojson' || ext === 'json') {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const parsed = JSON.parse(ev.target?.result as string);
+          onFileLoad(file.name, parsed);
+        } catch {
+          onFileLoad(file.name); // parsing failed — fall back to name only
+        }
+      };
+      reader.readAsText(file);
+    } else {
+      onFileLoad(file.name); // KML or other: name only
+    }
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    const file = e.dataTransfer.files?.[0];
+    if (file) readAndLoad(file);
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) readAndLoad(file);
+  }
 
   function handleTextChange(val: string) {
     setRegionText(val);
@@ -472,9 +501,41 @@ function StepRegion({ onFileLoad, onBack }: {
 }
 
 // ─── Step 5: Location Loaded confirmation ─────────────────────────────────────
-function StepLocationLoaded({ fileName, onReupload, onBack, onContinue }: {
-  fileName: string; onReupload: () => void; onBack: () => void; onContinue: () => void;
+
+/** Compute a [minLng, minLat, maxLng, maxLat] bounding box from any GeoJSON object. */
+function getBBox(obj: unknown): [number, number, number, number] | null {
+  const pts: [number, number][] = [];
+  function collect(o: unknown) {
+    if (!o || typeof o !== 'object') return;
+    if (Array.isArray(o)) {
+      if (o.length >= 2 && typeof o[0] === 'number' && typeof o[1] === 'number') {
+        pts.push([o[0] as number, o[1] as number]);
+      } else {
+        o.forEach(collect);
+      }
+    } else {
+      const r = o as Record<string, unknown>;
+      if (r.coordinates) collect(r.coordinates);
+      else if (r.geometry)  collect(r.geometry);
+      else if (r.geometries) collect(r.geometries);
+      else if (r.features)  collect(r.features);
+    }
+  }
+  collect(obj);
+  if (!pts.length) return null;
+  const lngs = pts.map(([lng]) => lng);
+  const lats = pts.map(([, lat]) => lat);
+  return [Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)];
+}
+
+function StepLocationLoaded({ fileName, geojson, onReupload, onBack, onContinue }: {
+  fileName: string; geojson?: object; onReupload: () => void; onBack: () => void; onContinue: () => void;
 }) {
+  const bbox = geojson ? getBBox(geojson) : null;
+  const geoType = geojson
+    ? ((geojson as Record<string, unknown>).type as string) ?? null
+    : null;
+
   return (
     <div className="max-w-xl mx-auto">
       <h2 className="text-2xl font-bold text-gray-900 mb-2">Location Data Loaded</h2>
@@ -491,14 +552,43 @@ function StepLocationLoaded({ fileName, onReupload, onBack, onContinue }: {
             <p className="text-xs text-green-600 mt-0.5 font-mono">{fileName}</p>
           </div>
         </div>
-        <div className="rounded-xl overflow-hidden bg-gray-200 h-40 flex items-center justify-center">
-          <div className="text-center">
-            <svg className="w-10 h-10 text-gray-400 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498 4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 0 0-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0Z" />
-            </svg>
-            <p className="text-xs text-gray-500">Region preview</p>
+
+        {/* Region preview — show parsed geometry info if available */}
+        {bbox ? (
+          <div className="rounded-xl bg-white border border-gray-200 px-5 py-4 space-y-2">
+            <div className="flex items-center gap-2 mb-1">
+              <svg className="w-4 h-4 flex-shrink-0" style={{ color: TEAL }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498 4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 0 0-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0Z" />
+              </svg>
+              <span className="text-xs font-semibold text-gray-700">Geometry Parsed</span>
+              {geoType && (
+                <span className="ml-auto text-xs font-mono px-2 py-0.5 rounded-full bg-teal-50 border border-teal-100" style={{ color: TEAL }}>
+                  {geoType}
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs font-mono text-gray-600">
+              <div className="bg-gray-50 rounded-lg px-3 py-2">
+                <span className="block text-gray-400 mb-0.5">West / East</span>
+                {bbox[0].toFixed(4)}° → {bbox[2].toFixed(4)}°
+              </div>
+              <div className="bg-gray-50 rounded-lg px-3 py-2">
+                <span className="block text-gray-400 mb-0.5">South / North</span>
+                {bbox[1].toFixed(4)}° → {bbox[3].toFixed(4)}°
+              </div>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="rounded-xl overflow-hidden bg-gray-200 h-32 flex items-center justify-center">
+            <div className="text-center">
+              <svg className="w-8 h-8 text-gray-400 mx-auto mb-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498 4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 0 0-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0Z" />
+              </svg>
+              <p className="text-xs text-gray-500">Region: {fileName}</p>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center justify-between bg-white rounded-xl px-4 py-3">
           <span className="text-xs text-gray-500">Not the right area?</span>
           <button onClick={onReupload} className="text-xs font-medium hover:underline transition-colors" style={{ color: TEAL }}>
@@ -781,12 +871,13 @@ function pickGradient(seed: string): string {
 }
 
 // ─── Step 8: Summary + workflow creation ──────────────────────────────────────
-function StepSummary({ useCase, startDate, endDate, frequency, fileName, planetProduct, answers, questions, onStartOver, onEditAnswers }: {
+function StepSummary({ useCase, startDate, endDate, frequency, fileName, regionGeoJSON, planetProduct, answers, questions, onStartOver }: {
   useCase: string;
   startDate: string;
   endDate: string;
   frequency: string;
   fileName: string;
+  regionGeoJSON?: object;
   planetProduct: string;
   answers: string[];
   questions: string[];
@@ -841,12 +932,18 @@ function StepSummary({ useCase, startDate, endDate, frequency, fileName, planetP
     setCreating(true);
     try {
       const intake = intakeRef.current;
+      // If the user uploaded a GeoJSON file, use its real geometry directly.
+      // Otherwise fall back to what synthesize-intake produced (place-name only → empty coords).
+      const regionForWorkflow = regionGeoJSON
+        ? { ...regionGeoJSON, description: intake?.region?.description ?? fileName }
+        : (intake?.region ?? { description: fileName });
+
       const convexId = await createConvexWorkflow({
         userId: user.convexUserId as Id<'users'>,
         useCase: workflowName.trim(),
         timeFrame: inferTimeFrame(startDate, endDate),
         dataFrequency: mapFrequency(frequency),
-        region: intake?.region ?? { description: fileName },
+        region: regionForWorkflow,
         dateRange: { start: startDate, end: endDate },
         temporalResolution: mapTemporalResolution(intake?.temporal_resolution),
         planetProduct: planetProduct,
@@ -957,9 +1054,13 @@ export default function IntakePage() {
   const [frequency, setFrequency] = useState<Frequency>('');
   const [planetProduct, setPlanetProduct] = useState<string[]>([]);
   const [regionFileName, setRegionFileName] = useState('');
+  
   const [aiQuestions, setAiQuestions] = useState<string[]>([]);
   const [answers, setAnswers] = useState<string[]>([]);
   const [attachments, setAttachments] = useState<Record<number, { name: string; content: string }>>({});
+  
+  const [regionGeoJSON, setRegionGeoJSON] = useState<object | null>(null);
+ 
   const [currentQIdx, setCurrentQIdx] = useState(0);
   const [regenerating, setRegenerating] = useState(false);
   const [generatingNext, setGeneratingNext] = useState(false);
@@ -1109,14 +1210,19 @@ export default function IntakePage() {
     setFrequency('');
     setPlanetProduct([]);
     setRegionFileName('');
+    
     setAiQuestions([]);
     setAnswers([]);
     setAttachments({});
+    
+    setRegionGeoJSON(null);
+    
     setCurrentQIdx(0);
   }
 
-  function handleFileLoad(name: string) {
+  function handleFileLoad(name: string, geojson?: object) {
     setRegionFileName(name);
+    setRegionGeoJSON(geojson ?? null);
     setStep(5);
   }
 
@@ -1152,7 +1258,8 @@ export default function IntakePage() {
         {step === 5 && (
           <StepLocationLoaded
             fileName={regionFileName}
-            onReupload={() => { setRegionFileName(''); setStep(4); }}
+            geojson={regionGeoJSON ?? undefined}
+            onReupload={() => { setRegionFileName(''); setRegionGeoJSON(null); setStep(4); }}
             onBack={() => setStep(4)}
             onContinue={enterQuestions}
           />
@@ -1183,6 +1290,7 @@ export default function IntakePage() {
             endDate={endDate}
             frequency={frequency}
             fileName={regionFileName}
+            regionGeoJSON={regionGeoJSON ?? undefined}
             planetProduct={planetProduct.join(', ')}
             answers={answers}
             questions={aiQuestions}
