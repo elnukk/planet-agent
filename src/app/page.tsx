@@ -3,7 +3,7 @@ import Link from 'next/link';
 const TEAM = [
   { name: 'Jolie Teo', linkedin: 'https://www.linkedin.com/in/jolie-teo/' },
   { name: 'Angelisa Wang', linkedin: 'https://www.linkedin.com/in/angelisa-wang/' },
-  { name: 'Elanu Karakus', linkedin: 'https://www.linkedin.com/in/elanu-karakus/' },
+  { name: 'Elanu Karakus (TA)', linkedin: 'https://www.linkedin.com/in/elanu-karakus/' },
   { name: 'Vanesska Hall', linkedin: 'https://www.linkedin.com/in/vanesska-hall/' },
   { name: 'David Tomz', linkedin: 'https://www.linkedin.com/in/davidtomz/' },
   { name: 'Brandyn Lu', linkedin: 'https://www.linkedin.com/in/brandyn-lu-8a6595301/' },
@@ -66,13 +66,25 @@ export default function LandingPage() {
             Planet Centinela, developed by Planet Labs, provides free high-frequency satellite data
             to conservation organizations monitoring 50 of the world's most vulnerable biodiversity
             hotspots. For most teams, that data sits behind complex APIs and documentation written
-            for engineers — not the ecologists and field researchers who actually need it.
+            for engineers, not the ecologists and field researchers who actually need it.
           </p>
           <p className="text-gray-600 text-base leading-relaxed">
-            The people doing this work — ecologists, field researchers, conservation managers — know
-            exactly what they need to learn from the data. They just shouldn't need to become software
-            engineers to get there.
+            Ecologists, field researchers, and conservation managers know exactly what they want
+            to learn from the data. They just shouldn't need to become software engineers to get there.
           </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-10">
+            {[
+              { quote: 'The learning curve for Planet products and workflows remains steep.', org: 'Osa Conservation' },
+              { quote: 'We need ongoing training for local GIS teams on API usage and the development of change detection algorithms.', org: 'Upemba National Park' },
+              { quote: 'Specific training on this [the API] or the ability to access this information with a UI would have been very beneficial.', org: 'Jane Goodall Institute' },
+            ].map(({ quote, org }) => (
+              <div key={org} className="flex flex-col justify-between bg-gray-50 rounded-2xl px-5 py-5">
+                <p className="text-sm text-gray-600 leading-relaxed italic mb-4">&ldquo;{quote}&rdquo;</p>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{org}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -96,8 +108,13 @@ export default function LandingPage() {
               <h3 className="font-semibold text-gray-900">Guided Workflow Setup</h3>
               <p className="text-sm text-gray-500 leading-relaxed">
                 Describe what you want to analyze in plain language. A step-by-step questionnaire
-                collects your use case, region, time range, and Planet product — then asks targeted
+                collects your use case, region, time range, and Planet product, then asks targeted
                 follow-up questions specific to your goals.
+              </p>
+              <p className="text-xs text-gray-400 leading-relaxed border-t border-gray-100 pt-3 mt-1">
+                A team monitoring deforestation in the Congo Basin describes their goal, selects
+                their region, and receives follow-up questions about baseline dates and key
+                vegetation indicators. No API calls needed.
               </p>
             </div>
 
@@ -113,8 +130,12 @@ export default function LandingPage() {
               <h3 className="font-semibold text-gray-900">Workflow dashboard</h3>
               <p className="text-sm text-gray-500 leading-relaxed">
                 Your analyses are saved to a personal dashboard. Name each workflow, pick up where
-                you left off, and keep a record of every study you've configured — organized and
-                accessible from one place.
+                you left off, and keep a record of every study you've configured, all in one place.
+              </p>
+              <p className="text-xs text-gray-400 leading-relaxed border-t border-gray-100 pt-3 mt-1">
+                A team running separate studies for forest cover, river encroachment, and seasonal
+                flooding keeps each analysis saved under its own name, ready to continue whenever
+                they need it.
               </p>
             </div>
 
@@ -133,6 +154,11 @@ export default function LandingPage() {
                 outputs you can run directly in the browser. Inspect the underlying code, understand
                 each step, and modify it if needed.
               </p>
+              <p className="text-xs text-gray-400 leading-relaxed border-t border-gray-100 pt-3 mt-1">
+                When a vegetation index calculation returns unexpected values, the inline comments
+                explain what each cell does and why, making it straightforward to find and adjust
+                the relevant parameter.
+              </p>
             </div>
 
           </div>
@@ -144,12 +170,16 @@ export default function LandingPage() {
         <div className="max-w-3xl mx-auto">
           <h2 className="text-2xl font-bold mb-5">How We Built It</h2>
           <p className="text-gray-400 text-base leading-relaxed">
-            The frontend is built with Next.js and TypeScript, styled with Tailwind CSS. User data
-            and workflows are stored and synced in real time using Convex. Follow-up questions and
-            workflow code are generated using Anthropic's Claude API, which interprets each user's
-            use case and produces context-specific prompts and analysis code. Notebook cells are
-            executed in isolated sandboxes via E2B, so code runs directly in the browser without
-            any local setup required.
+            The frontend is built with Next.js and TypeScript, styled with Tailwind CSS. When a
+            user completes the intake questionnaire, their inputs (use case, region, time range,
+            Planet product) are sent to Anthropic's Claude API, which generates three to five
+            follow-up questions tailored to the specific analysis described. Once the workflow is
+            confirmed, Claude also generates the analysis code, grounded in Planet's existing
+            Jupyter notebook library to reduce the risk of unsupported methods. User accounts,
+            workflow configurations, and follow-up Q&A are stored in Convex, a real-time database
+            that keeps the dashboard in sync without polling. Each notebook cell runs in an isolated
+            Python sandbox via E2B, so users can execute code directly in the browser without
+            installing any dependencies locally.
           </p>
           <div className="flex flex-wrap gap-3 mt-8">
             {TECH.map((t) => (
