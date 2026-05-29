@@ -951,9 +951,11 @@ function StepSummary({ useCase, startDate, endDate, frequency, fileName, regionG
       const intake = intakeRef.current;
       // If the user uploaded a GeoJSON file, use its real geometry directly.
       // Otherwise fall back to what synthesize-intake produced (place-name only → empty coords).
-      const regionForWorkflow = regionGeoJSON
-        ? { ...regionGeoJSON, description: intake?.region?.description ?? fileName }
-        : (intake?.region ?? { description: fileName });
+      // Strip geometry coordinates before saving — the AI often hallucinates
+      // thousands of coordinate pairs which blows past Convex's array size limit.
+      // Only the description is used for display; geometry isn't needed downstream.
+      const regionDescription = intake?.region?.description ?? fileName ?? '';
+      const regionForWorkflow = { description: regionDescription };
 
       const convexId = await createConvexWorkflow({
         userId: user.convexUserId as Id<'users'>,
