@@ -40,6 +40,9 @@ const STOP_WORDS = new Set([
   'basin','delta','valley','coast','coastal','river','lake','ocean','sea',
   'mountain','range','peninsula','island','plateau','plain','plains',
   'region','area','zone','territory','province','state','county','district',
+  // Common city/bay names that appear in use-cases
+  'monterey','chesapeake','puget','bering','hudson','galveston','tampa',
+  'miami','seattle','portland','boston','chicago','houston','phoenix',
 ]);
 
 // Maps subject keywords → a more descriptive Commons search query.
@@ -61,6 +64,17 @@ const SUBJECT_QUERIES: Record<string, string> = {
   species:        'wildlife species tropical biodiversity',
   habitat:        'wildlife habitat forest aerial',
   conservation:   'wildlife conservation forest aerial',
+  // Marine & ocean
+  whale:          'humpback whale ocean',
+  whales:         'humpback whale ocean',
+  dolphin:        'dolphin ocean aerial',
+  shark:          'shark ocean aerial',
+  fish:           'fish school ocean underwater',
+  marine:         'marine wildlife ocean',
+  ocean:          'ocean blue water aerial',
+  sea:            'ocean sea aerial',
+  seagrass:       'seagrass underwater marine',
+  kelp:           'kelp forest underwater',
   // Water & floods
   flood:          'river wetland floodplain aerial',
   flooding:       'river floodplain wetland aerial',
@@ -115,9 +129,10 @@ function buildSearchQuery(keywords: string[]): string {
 }
 
 async function commonsImagesForQuery(query: string, limit: number): Promise<string[]> {
-  // Search Wikimedia Commons (namespace 6 = File) for photos matching the query
+  // Exclude books, covers, text scans, and diagrams at the search level
+  const searchQuery = query + ' -book -cover -text -poster -publication -journal -report -manual';
   const searchRes = await fetch(
-    `https://commons.wikimedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&srnamespace=6&srlimit=${limit * 3}&format=json&origin=*`,
+    `https://commons.wikimedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(searchQuery)}&srnamespace=6&srlimit=${limit * 3}&format=json&origin=*`,
     { headers: { 'User-Agent': 'PlanetCentinela/1.0' } },
   );
   const searchData = await searchRes.json();
@@ -137,12 +152,19 @@ async function commonsImagesForQuery(query: string, limit: number): Promise<stri
     imageinfo?: Array<{ thumburl?: string; url?: string }>;
   }>;
 
+  const NON_PHOTO = /\b(book|cover|logo|icon|diagram|chart|graph|map|flag|coat|arms|badge|poster|stamp|symbol|sign|banner|painting|portrait|drawing|illustration|cartoon|vector|schema|plan|layout|infographic)\b/i;
+
   const urls: string[] = [];
-  for (const page of pages) {
+  for (const p of pages) {
+    const page = p as { title?: string; imageinfo?: Array<{ thumburl?: string; url?: string }> };
     const info = page.imageinfo?.[0];
     const url = info?.thumburl ?? info?.url;
-    // Skip SVGs and non-photo formats
-    if (url && !url.match(/\.(svg|gif|tiff|tif|pdf)(\?|$)/i)) {
+    const title = page.title ?? '';
+    if (
+      url &&
+      !url.match(/\.(svg|gif|tiff|tif|pdf)(\?|$)/i) &&
+      !NON_PHOTO.test(title)
+    ) {
       urls.push(url);
     }
     if (urls.length >= limit) break;

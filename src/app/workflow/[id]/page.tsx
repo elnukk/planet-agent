@@ -132,12 +132,20 @@ function MarkdownCell({ source }: { source: string }) {
 }
 
 function CodeCell({
-  cell, showCode, ran, onRun,
+  cell, showCode, ran, onRun, onEdit,
 }: {
-  cell: Cell; showCode: boolean; ran: boolean; onRun: (id: string) => void;
+  cell: Cell; showCode: boolean; ran: boolean;
+  onRun: (id: string) => void;
+  onEdit: (id: string, newSource: string) => void;
 }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(cell.source);
   const ranOk = ran && !cell.isRunning && !cell.stderr;
   const noOutput = ranOk && !cell.output;
+
+  function startEdit() { setEditValue(cell.source); setIsEditing(true); }
+  function cancelEdit() { setIsEditing(false); }
+  function saveEdit() { onEdit(cell.id, editValue); setIsEditing(false); }
 
   return (
     <div className="rounded-xl overflow-hidden border border-gray-200">
@@ -145,29 +153,70 @@ function CodeCell({
         <div className="bg-gray-900 px-4 py-4 relative">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs text-gray-400 font-mono">Python</span>
-            <button
-              onClick={() => onRun(cell.id)}
-              disabled={cell.isRunning}
-              className="text-xs text-white font-medium px-3 py-1 rounded-full transition-colors disabled:opacity-50 flex items-center gap-1.5"
-              style={{ backgroundColor: ranOk ? '#16a34a' : TEAL }}
-            >
-              {cell.isRunning ? (
-                'Running…'
-              ) : ranOk ? (
+            <div className="flex items-center gap-2">
+              {isEditing ? (
                 <>
-                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                  Ran
+                  <button
+                    onClick={cancelEdit}
+                    className="text-xs text-gray-400 font-medium px-3 py-1 rounded-full border border-gray-600 hover:border-gray-400 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={saveEdit}
+                    className="text-xs text-white font-medium px-3 py-1 rounded-full transition-colors"
+                    style={{ backgroundColor: TEAL }}
+                  >
+                    Save
+                  </button>
                 </>
               ) : (
-                '▶ Run'
+                <>
+                  <button
+                    onClick={startEdit}
+                    className="text-xs text-gray-400 font-medium px-3 py-1 rounded-full border border-gray-600 hover:border-gray-400 hover:text-gray-200 transition-colors flex items-center gap-1"
+                  >
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Z" />
+                    </svg>
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => onRun(cell.id)}
+                    disabled={cell.isRunning}
+                    className="text-xs text-white font-medium px-3 py-1 rounded-full transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                    style={{ backgroundColor: ranOk ? '#16a34a' : TEAL }}
+                  >
+                    {cell.isRunning ? (
+                      'Running…'
+                    ) : ranOk ? (
+                      <>
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                        Ran
+                      </>
+                    ) : (
+                      '▶ Run'
+                    )}
+                  </button>
+                </>
               )}
-            </button>
+            </div>
           </div>
-          <pre className="text-sm font-mono text-gray-100 leading-relaxed overflow-x-auto whitespace-pre-wrap">
-            {cell.source}
-          </pre>
+          {isEditing ? (
+            <textarea
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              className="w-full bg-gray-800 text-sm font-mono text-gray-100 leading-relaxed rounded-lg px-3 py-2 border border-gray-600 focus:outline-none focus:border-teal-500 resize-y"
+              rows={Math.max(6, editValue.split('\n').length + 2)}
+              spellCheck={false}
+            />
+          ) : (
+            <pre className="text-sm font-mono text-gray-100 leading-relaxed overflow-x-auto whitespace-pre-wrap">
+              {cell.source}
+            </pre>
+          )}
         </div>
       )}
       {ran && cell.output && (
@@ -410,6 +459,8 @@ export default function WorkflowPage() {
 
   // Dynamic execution state storage for streaming stdout, stderr, and component spins
   const [cellOutputs, setCellOutputs] = useState<Record<string, { output?: string; stderr?: string; isRunning?: boolean }>>({});
+  const [editedSources, setEditedSources] = useState<Record<string, string>>({});
+  const updateWorkflow = useMutation(api.workflows.updateWorkflow);
 
   function triggerAssembly(wd: NonNullable<typeof workflowData>) {
     if (assembleTriggered.current) return;
@@ -461,15 +512,26 @@ export default function WorkflowPage() {
   const convexCells = workflowData?.notebookCells ?? [];
   const hasRealCells = convexCells.length > 0;
   
-  // Combine native Convex static structures with dynamic execution outputs
+  // Combine native Convex static structures with dynamic execution outputs and local edits
   const cells: Cell[] = hasRealCells
     ? fromConvexCells(convexCells).map((cell) => ({
         ...cell,
+        source: editedSources[cell.id] ?? cell.source,
         output: cellOutputs[cell.id]?.output,
         stderr: cellOutputs[cell.id]?.stderr,
         isRunning: cellOutputs[cell.id]?.isRunning,
       }))
     : [];
+
+  async function handleCellEdit(cellId: string, newSource: string) {
+    setEditedSources((prev) => ({ ...prev, [cellId]: newSource }));
+    if (!workflowId) return;
+    const updatedCells = cells.map((c) => ({
+      cellType: c.type as 'code' | 'markdown',
+      source: c.id === cellId ? newSource : (editedSources[c.id] ?? c.source),
+    }));
+    await updateWorkflow({ id: workflowId as Id<'workflows'>, notebookCells: updatedCells });
+  }
 
   const [showApiKeyPrompt, setShowApiKeyPrompt] = useState(false);
 
@@ -671,6 +733,7 @@ export default function WorkflowPage() {
               showCode={showCode}
               ran={ranCells.has(cell.id)}
               onRun={runCell}
+              onEdit={handleCellEdit}
             />
           )
         )}
