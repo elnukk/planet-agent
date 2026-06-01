@@ -353,21 +353,31 @@ function StepPlanetProduct({ value, onChange, onBack, onContinue }: {
   );
 }
 
+// Convex document limit is 1 MB; leave headroom for other fields.
+const MAX_GEOJSON_BYTES = 500 * 1024; // 500 KB
+
 // ─── Step 4: Region ───────────────────────────────────────────────────────────
 function StepRegion({ onFileLoad, onBack }: {
   onFileLoad: (name: string, geojson?: object) => void; onBack: () => void;
 }) {
   const [regionText, setRegionText] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [fileError, setFileError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function readAndLoad(file: File) {
+    setFileError(null);
     const ext = file.name.split('.').pop()?.toLowerCase();
     if (ext === 'geojson' || ext === 'json') {
       const reader = new FileReader();
       reader.onload = (ev) => {
+        const raw = ev.target?.result as string;
+        if (new TextEncoder().encode(raw).length > MAX_GEOJSON_BYTES) {
+          setFileError('The area is too large — please upload a smaller or simplified GeoJSON file (max 500 KB).');
+          return;
+        }
         try {
-          const parsed = JSON.parse(ev.target?.result as string);
+          const parsed = JSON.parse(raw);
           onFileLoad(file.name, parsed);
         } catch {
           onFileLoad(file.name); // parsing failed — fall back to name only
@@ -472,6 +482,14 @@ function StepRegion({ onFileLoad, onBack }: {
           <span className="text-xs text-gray-400">Drag &amp; drop or click to browse</span>
           <input type="file" accept=".geojson,.json" className="hidden" onChange={handleFileChange} />
         </label>
+        {fileError && (
+          <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+            <svg className="w-4 h-4 mt-0.5 flex-shrink-0 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+            </svg>
+            <span>{fileError}</span>
+          </div>
+        )}
       </div>
       <div className="flex justify-between pt-6">
         <button onClick={onBack} className="px-6 py-2.5 rounded-full text-sm font-medium text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors">Back</button>
@@ -894,9 +912,11 @@ function StepSummary({ useCase, startDate, endDate, frequency, fileName, regionG
       const intake = intakeRef.current;
       // If the user uploaded a GeoJSON file, use its real geometry directly.
       // Otherwise fall back to what synthesize-intake produced (place-name only → empty coords).
-      const regionForWorkflow = regionGeoJSON
-        ? { ...regionGeoJSON, description: intake?.region?.description ?? fileName }
-        : (intake?.region ?? { description: fileName });
+      // Strip geometry coordinates before saving — the AI often hallucinates
+      // thousands of coordinate pairs which blows past Convex's array size limit.
+      // Only the description is used for display; geometry isn't needed downstream.
+      const regionDescription = intake?.region?.description ?? fileName ?? '';
+      const regionForWorkflow = { description: regionDescription };
 
       const convexId = await createConvexWorkflow({
         userId: user.convexUserId as Id<'users'>,

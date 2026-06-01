@@ -65,7 +65,7 @@ function WorkflowCard({
 
   return (
     <div className="group relative rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-200">
-      <button onClick={onClick} className="w-full text-left focus:outline-none">
+      <button onClick={onClick} className="block w-full text-left focus:outline-none">
         <div
           className="w-full aspect-square flex items-end p-3 relative"
           style={{ background: cardGradient(workflow.id) }}
