@@ -78,25 +78,6 @@ export function upsertLocalUser(user: User): void {
   writeSessionCookie(user);
 }
 
-// Legacy: reads plaintext password from localStorage for accounts created before
-// Convex migration. Used only as a fallback in the login flow; no new passwords
-// are written to localStorage.
-export function signIn(email: string, password: string): User | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const passwords: Record<string, string> = JSON.parse(
-      localStorage.getItem('planet_passwords') || '{}'
-    );
-    const users: User[] = JSON.parse(localStorage.getItem('planet_users') || '[]');
-    const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
-    if (!user) return null;
-    if (passwords[user.email] !== password) return null;
-    return user;
-  } catch {
-    return null;
-  }
-}
-
 // Updates the in-cookie user object. The actual Convex record is patched
 // separately by the profile page via useMutation.
 export function updateUser(
@@ -106,31 +87,6 @@ export function updateUser(
   const session = getCurrentUser();
   if (!session || session.id !== userId) return null;
   const updated = { ...session, ...updates };
-  writeSessionCookie(updated);
-  return updated;
-}
-
-export function addApiKey(userId: string, description: string, key: string): User | null {
-  const session = getCurrentUser();
-  if (!session || session.id !== userId) return null;
-  const newKey: ApiKey = {
-    id: crypto.randomUUID(),
-    description,
-    key,
-    createdAt: new Date().toISOString(),
-  };
-  const updated = { ...session, apiKeys: [...(session.apiKeys ?? []), newKey] };
-  writeSessionCookie(updated);
-  return updated;
-}
-
-export function removeApiKey(userId: string, keyId: string): User | null {
-  const session = getCurrentUser();
-  if (!session || session.id !== userId) return null;
-  const updated = {
-    ...session,
-    apiKeys: (session.apiKeys ?? []).filter((k) => k.id !== keyId),
-  };
   writeSessionCookie(updated);
   return updated;
 }

@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { waitUntil } from '@vercel/functions';
+
+// Allows the assembly to run up to 5 min on Vercel Pro (60s on Hobby)
+export const maxDuration = 300;
 import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
@@ -66,11 +70,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'intake and workflowId required' }, { status: 400 });
   }
 
-  // Return immediately — assembly runs in the background.
-  // The workflow page loading state is driven by Convex's reactive notebookCells query,
-  // so it updates automatically when runAssembly writes to Convex.
-  runAssembly(intake, workflowId).catch((e) =>
-    console.error('[assemble-workflow] background error:', e),
+  // waitUntil keeps the Vercel Lambda alive until assembly completes.
+  // The workflow page reacts automatically when Convex's notebookCells is updated.
+  waitUntil(
+    runAssembly(intake, workflowId).catch((e) =>
+      console.error('[assemble-workflow] background error:', e),
+    ),
   );
 
   return NextResponse.json({ ok: true, status: 'assembling' });

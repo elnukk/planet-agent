@@ -3,6 +3,7 @@ import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import Anthropic from '@anthropic-ai/sdk';
+import { decrypt } from '@/lib/encryption';
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
@@ -24,7 +25,6 @@ type ChatRequestBody = {
   workflowId: string;
   message: string;
   notebookCells?: NotebookCell[];
-  planetApiKey?: string;
 };
 
 // Claude only needs to emit the cells that change, not the full notebook.
@@ -121,7 +121,7 @@ function toClaudeMessages(
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as ChatRequestBody;
-    const { workflowId, message, notebookCells: clientCells, planetApiKey } = body;
+    const { workflowId, message, notebookCells: clientCells } = body;
 
     if (!workflowId || !message?.trim()) {
       return NextResponse.json({ error: 'workflowId and message are required' }, { status: 400 });
@@ -138,6 +138,9 @@ export async function POST(req: NextRequest) {
     if (!workflow) {
       return NextResponse.json({ error: 'Workflow not found' }, { status: 404 });
     }
+
+    const workflowUser = await convex.query(api.users.getUser, { id: workflow.userId });
+    const planetApiKey = workflowUser?.apiKeyValue ? decrypt(workflowUser.apiKeyValue) : null;
 
     const currentCells: NotebookCell[] = Array.isArray(clientCells)
       ? clientCells

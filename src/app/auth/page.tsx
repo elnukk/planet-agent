@@ -6,7 +6,7 @@ import Image from 'next/image';
 import { useMutation, useConvex } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import type { Id } from '../../../convex/_generated/dataModel';
-import { signIn, getCurrentUser, hashPassword, upsertLocalUser, type User } from '@/lib/auth';
+import { getCurrentUser, hashPassword, upsertLocalUser, type User } from '@/lib/auth';
 
 import loginBg from '../dashboard/loginbackground.png';
 import planetLogo from '../dashboard/planetlogo.png';
@@ -30,8 +30,6 @@ function AuthPageInner() {
   const searchParams = useSearchParams();
   const convex = useConvex();
   const createUser = useMutation(api.users.createUser);
-  const updatePassword = useMutation(api.users.updateUserPassword);
-  const saveApiKey = useMutation(api.users.setApiKey);
   const [mounted, setMounted] = useState(false);
   const [mode, setMode] = useState<Mode>(() =>
     searchParams.get('mode') === 'signup' ? 'signup' : 'login'
@@ -87,25 +85,14 @@ function AuthPageInner() {
         const hash = await hashPassword(password);
         const convexUser = await convex.query(api.users.getUserByEmail, { email: normalizedEmail });
 
-        if (!convexUser) {
-          // Legacy user — exists only in localStorage on this device
-          const legacy = signIn(email, password);
-          if (!legacy) { setError('Incorrect email or password.'); return; }
-          // Migrate to Convex with password hash
-          const convexId = await createUser({ name: legacy.name, email: normalizedEmail, passwordHash: hash });
-          upsertLocalUser({ ...legacy, convexUserId: convexId as string });
-          router.push('/dashboard');
+        if (!convexUser || !convexUser.passwordHash) {
+          setError('Incorrect email or password.');
           return;
         }
 
-        if (convexUser.passwordHash) {
-          if (convexUser.passwordHash !== hash) { setError('Incorrect email or password.'); return; }
-        } else {
-          // Convex user exists but was created before password hashing — check localStorage
-          const legacy = signIn(email, password);
-          if (!legacy) { setError('Incorrect email or password.'); return; }
-          // Migrate: save hash to Convex
-          await updatePassword({ id: convexUser._id, passwordHash: hash });
+        if (convexUser.passwordHash !== hash) {
+          setError('Incorrect email or password.');
+          return;
         }
 
         const sessionUser: User = {
@@ -116,9 +103,7 @@ function AuthPageInner() {
           phone: convexUser.phoneNumber,
           organization: convexUser.organizationName,
           role: convexUser.roleInOrganization,
-          apiKeys: convexUser.apiKeyValue
-            ? [{ id: 'primary', description: convexUser.apiKeyDescription || 'API Key', key: convexUser.apiKeyValue, createdAt: new Date(convexUser.createdAt).toISOString() }]
-            : [],
+          apiKeys: [],
           createdAt: new Date(convexUser.createdAt).toISOString(),
         };
         upsertLocalUser(sessionUser);
@@ -147,7 +132,11 @@ function AuthPageInner() {
 
         const hasApiKey = showApiKey && apiKeyDesc.trim() && apiKeyValue.trim();
         if (hasApiKey) {
-          await saveApiKey({ id: convexId as Id<'users'>, apiKeyDescription: apiKeyDesc.trim(), apiKeyValue: apiKeyValue.trim() });
+          await fetch('/api/save-api-key', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: convexId, apiKeyDescription: apiKeyDesc.trim(), apiKeyValue: apiKeyValue.trim() }),
+          });
         }
 
         const sessionUser: User = {
@@ -158,9 +147,7 @@ function AuthPageInner() {
           phone: phone.trim() || undefined,
           organization: organization.trim() || undefined,
           role: orgRole.trim() || undefined,
-          apiKeys: hasApiKey
-            ? [{ id: 'primary', description: apiKeyDesc.trim(), key: apiKeyValue.trim(), createdAt: new Date().toISOString() }]
-            : [],
+          apiKeys: [],
           createdAt: new Date().toISOString(),
         };
         upsertLocalUser(sessionUser);
@@ -263,7 +250,7 @@ function AuthPageInner() {
                     <div className="mt-3 space-y-2 pl-2 border-l-2 border-gray-100">
                       <input type="text" value={apiKeyDesc} onChange={(e) => setApiKeyDesc(e.target.value)}
                         placeholder="Key description (e.g. Planet API)" className={INPUT} />
-                      <input type="text" value={apiKeyValue} onChange={(e) => setApiKeyValue(e.target.value)}
+                      <input type="password" value={apiKeyValue} onChange={(e) => setApiKeyValue(e.target.value)}
                         placeholder="API key value" className={INPUT} />
                     </div>
                   )}

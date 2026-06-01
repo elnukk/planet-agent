@@ -11,7 +11,11 @@
       "Bash(python3 -c \"import fastapi\")",
       "Bash(python3 -c \"import uvicorn\")",
       "Bash(python3 *)",
-      "Bash(grep -v \"^$\")"
+      "Bash(grep -v \"^$\")",
+      "Bash(git pull *)",
+      "Bash(git stash *)",
+      "Bash(git push *)",
+      "Bash(node *)"
     ]
   }
 }

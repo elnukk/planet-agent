@@ -11,15 +11,13 @@ import {
   setConvexUserId,
   type User,
 } from '@/lib/auth';
-import {
-  getWorkflowImage, storeWorkflowImage,
-} from '@/lib/workflowImages';
 import planetLogo from './planetlogo.png';
 
 interface DisplayWorkflow {
   id: string;
   name: string;
   updatedAt: string;
+  imageUrl?: string;
 }
 
 const GRADIENTS = [
@@ -63,20 +61,7 @@ function WorkflowCard({
   onClick: () => void;
   onDelete: () => void;
 }) {
-  const [imgUrl, setImgUrl] = useState<string | null>(() => getWorkflowImage(workflow.id));
-
-  useEffect(() => {
-    if (imgUrl) return;
-    fetch(`/api/workflow-image?name=${encodeURIComponent(workflow.name)}&limit=1`)
-      .then((r) => r.json())
-      .then(({ urls }: { urls: string[] }) => {
-        if (urls.length) {
-          setImgUrl(urls[0]);
-          storeWorkflowImage(workflow.id, urls[0]);
-        }
-      })
-      .catch(() => {});
-  }, [workflow.id, workflow.name, imgUrl]);
+  const imgUrl = workflow.imageUrl ?? null;
 
   return (
     <div className="group relative rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-200">
@@ -152,6 +137,7 @@ export default function DashboardPage() {
     id: w._id as string,
     name: w.useCase,
     updatedAt: new Date(w.updatedAt).toISOString(),
+    imageUrl: w.imageUrl ?? undefined,
   }));
 
   useEffect(() => {

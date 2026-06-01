@@ -262,7 +262,7 @@ function ChatMarkdown({ content }: { content: string }) {
   );
 }
 
-function ChatPanel({ workflowId, intake, apiKeyValue, notebookCells, onClose }: { workflowId: string; intake: IntakeJSON | null; apiKeyValue: string | null; notebookCells: Array<{ cellType: string; source: string }>; onClose: () => void }) {
+function ChatPanel({ workflowId, intake, hasApiKey, notebookCells, onClose }: { workflowId: string; intake: IntakeJSON | null; hasApiKey: boolean; notebookCells: Array<{ cellType: string; source: string }>; onClose: () => void }) {
   const convexMessages = useQuery(
     api.conversations.getConversation,
     { workflowId: workflowId as Id<'workflows'> },
@@ -290,7 +290,7 @@ function ChatPanel({ workflowId, intake, apiKeyValue, notebookCells, onClose }: 
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workflowId, message: text, notebookCells, planetApiKey: apiKeyValue ?? undefined }),
+        body: JSON.stringify({ workflowId, message: text, notebookCells }),
       });
       const data = await res.json() as { reply?: string; error?: string };
       const reply = data.reply || data.error || 'Something went wrong. Please try again.';
@@ -382,7 +382,7 @@ export default function WorkflowPage() {
     api.users.getUser,
     localUser?.convexUserId ? { id: localUser.convexUserId as Id<'users'> } : 'skip',
   );
-  const apiKeyValue = convexUserData?.apiKeyValue ?? null;
+  const hasApiKey = !!convexUserData?.apiKeyValue;
 
   const intake: IntakeJSON | null = workflowData
     ? {
@@ -426,7 +426,7 @@ export default function WorkflowPage() {
       user_description: wd.userDescription ?? '',
       inferred_intent: wd.inferredIntent ?? '',
       constraints: wd.constraints ?? [],
-      available_env_vars: apiKeyValue ? ['PL_API_KEY', 'PLANET_API_KEY'] : [],
+      available_env_vars: hasApiKey ? ['PL_API_KEY', 'PLANET_API_KEY'] : [],
     };
 
     fetch('/api/assemble-workflow', {
@@ -478,7 +478,7 @@ export default function WorkflowPage() {
     if (!targetCell) return;
 
     if (convexUserData === undefined) return; // still loading
-    if (!apiKeyValue) {
+    if (!hasApiKey) {
       setShowApiKeyPrompt(true);
       return;
     }
@@ -500,7 +500,7 @@ export default function WorkflowPage() {
         body: JSON.stringify({
           code,
           packages: workflowData?.packages ?? [],
-          planetApiKey: apiKeyValue,
+          workflowId,
         }),
       });
 
@@ -529,7 +529,7 @@ export default function WorkflowPage() {
 
   async function runAll() {
     if (convexUserData === undefined) return; // still loading
-    if (!apiKeyValue) {
+    if (!hasApiKey) {
       setShowApiKeyPrompt(true);
       return;
     }
@@ -590,7 +590,7 @@ export default function WorkflowPage() {
               Download .ipynb
             </button>
             <button
-              onClick={() => { if (!apiKeyValue) { setShowApiKeyPrompt(true); return; } openInColab(convexCells, workflowName); }}
+              onClick={() => openInColab(convexCells, workflowName)}
               className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold border transition-colors"
               style={{ borderColor: '#F9AB00', color: '#F9AB00' }}
             >
@@ -694,7 +694,7 @@ export default function WorkflowPage() {
       </button>
 
       {chatOpen && workflowId && (
-        <ChatPanel workflowId={workflowId} intake={intake} apiKeyValue={apiKeyValue} notebookCells={convexCells} onClose={() => setChatOpen(false)} />
+        <ChatPanel workflowId={workflowId} intake={intake} hasApiKey={hasApiKey} notebookCells={convexCells} onClose={() => setChatOpen(false)} />
       )}
 
       {showApiKeyPrompt && (

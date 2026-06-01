@@ -153,6 +153,9 @@ export default defineSchema({
 
     // pip-installable packages required by this workflow
     packages: v.optional(v.array(v.string())),
+
+    // cover image URL (fetched from Wikimedia at creation time)
+    imageUrl: v.optional(v.string()),
   })
     .index("by_userId", ["userId"])
     .index("by_createdAt", ["createdAt"]),

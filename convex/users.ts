@@ -169,3 +169,12 @@ export const setApiKey = mutation({
     await ctx.db.patch(id, updates);
   },
 });
+
+export const clearApiKey = mutation({
+  args: { id: v.id("users") },
+  handler: async (ctx, { id }) => {
+    const user = await ctx.db.get(id);
+    if (!user) throw new Error("User not found");
+    await ctx.db.patch(id, { apiKeyValue: undefined, apiKeyDescription: undefined });
+  },
+});

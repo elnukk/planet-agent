@@ -42,40 +42,7 @@ function mapTemporalResolution(tr: string | undefined): "daily" | "weekly" | "bi
 const TEAL = '#009DA5';
 type Frequency = 'Daily' | 'Weekly' | 'Monthly' | 'Quarterly' | 'Yearly' | '';
 
-const FALLBACK_QUESTIONS: string[] = [
-  'What specific environmental or land-use indicators are you tracking?',
-  'Do you have existing baseline data or reference imagery to compare against?',
-  'How will the results of this analysis be used or acted upon?',
-];
-
 const PLANET_PRODUCTS = ['PlanetScope', 'SkySat', 'Sentinel-2', 'Basemaps', 'Planetary Variables'];
-
-async function fetchAIQuestions(
-  useCase: string,
-  region: string,
-  startDate: string,
-  endDate: string,
-  planetProduct: string,
-): Promise<string[]> {
-  try {
-    const res = await fetch('/api/intake-questions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        useCase,
-        region,
-        dateRange: `${startDate} to ${endDate}`,
-        planetProduct,
-      }),
-    });
-    if (!res.ok) return FALLBACK_QUESTIONS;
-    const data = await res.json();
-    const qs: string[] = data.questions;
-    return qs?.length >= 3 ? qs.slice(0, 5) : FALLBACK_QUESTIONS;
-  } catch {
-    return FALLBACK_QUESTIONS;
-  }
-}
 
 // ─── Shared NavBar ────────────────────────────────────────────────────────────
 function NavBar() {
@@ -104,7 +71,7 @@ function NavBar() {
 }
 
 // ─── Progress bar ─────────────────────────────────────────────────────────────
-// Steps 1–5 = setup, step 6 = hidden loading, 7 = questions, 8 = summary
+// Steps 1–5 = setup, 7 = questions, 8 = summary
 const STEP_LABELS = ['Use Case', 'Time Frame', 'Product', 'Region', 'Questions', 'Confirm'];
 
 function stepToProgressIdx(step: number): number {
@@ -112,7 +79,6 @@ function stepToProgressIdx(step: number): number {
   if (step === 2) return 1;
   if (step === 3) return 2;
   if (step === 4 || step === 5) return 3;
-  if (step === 6) return -1;
   if (step === 7) return 4;
   if (step === 8) return 5;
   return -1;
@@ -623,35 +589,6 @@ function StepLocationLoaded({ fileName, geojson, onReupload, onBack, onContinue 
   );
 }
 
-// ─── Step 6: Loading interstitial ─────────────────────────────────────────────
-function StepLoading({
-  useCase, region, startDate, endDate, planetProduct, onDone,
-}: {
-  useCase: string; region: string; startDate: string; endDate: string; planetProduct: string;
-  onDone: (questions: string[]) => void;
-}) {
-  useEffect(() => {
-    fetchAIQuestions(useCase, region, startDate, endDate, planetProduct).then(onDone);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  return (
-    <div className="min-h-screen bg-white flex flex-col">
-      <div className="bg-black h-20 flex items-center justify-center">
-        <span className="text-white text-2xl font-bold tracking-wide">Project Centinela</span>
-      </div>
-      <div className="flex-1 flex flex-col items-center justify-center gap-5 px-4">
-        <div className="w-16 h-16 rounded-full border-4 border-t-transparent animate-spin"
-          style={{ borderColor: `${TEAL} ${TEAL} ${TEAL} transparent` }} />
-        <div className="text-center space-y-1 max-w-xs">
-          <p className="text-gray-800 text-base font-semibold">Analyzing your inputs…</p>
-          <p className="text-gray-400 text-sm">Generating tailored follow-up questions based on your use case and region.</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Step 7: Follow-up questions with dot navigation ─────────────────────────
 function StepQuestions({
   questions, answers, currentIdx,
@@ -907,6 +844,7 @@ function StepSummary({ useCase, startDate, endDate, frequency, fileName, regionG
     () => extractTitle(useCase) || 'New Workflow'
   );
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [generatingMeta, setGeneratingMeta] = useState(true);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const intakeRef = useRef<IntakeJSON | null>(null);
@@ -945,7 +883,12 @@ function StepSummary({ useCase, startDate, endDate, frequency, fileName, regionG
 
   async function handleCreate() {
     const user = getCurrentUser();
-    if (!user?.convexUserId || !workflowName.trim()) return;
+    if (!workflowName.trim()) return;
+    if (!user?.convexUserId) {
+      setCreateError('Session expired — please sign in again.');
+      return;
+    }
+    setCreateError(null);
     setCreating(true);
     try {
       const intake = intakeRef.current;
@@ -970,6 +913,7 @@ function StepSummary({ useCase, startDate, endDate, frequency, fileName, regionG
         followUpQA: questions.map((q, i) => ({ question: q, answer: answers[i] || '' })),
         notebookCells: [],
         sourceNotebooks: [],
+        imageUrl: photoUrl ?? undefined,
       });
       router.push(`/workflow/${convexId}`);
     } finally {
@@ -1031,6 +975,10 @@ function StepSummary({ useCase, startDate, endDate, frequency, fileName, regionG
           />
         </div>
       </div>
+
+      {createError && (
+        <p className="text-xs text-red-500 text-center mt-2">{createError}</p>
+      )}
 
       <div className="flex justify-between pt-4">
         <div className="flex gap-2">

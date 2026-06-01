@@ -68,6 +68,7 @@ export const createWorkflow = mutation({
       cellIndex: v.number(),
       content: v.string(),
     })),
+    imageUrl: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
