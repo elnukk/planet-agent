@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -13,9 +14,13 @@ from agent.coder import assemble_notebook
 
 app = FastAPI(title="Planet Agent API")
 
+_origins = ["http://localhost:3000"]
+if os.getenv("FRONTEND_URL"):
+    _origins.append(os.getenv("FRONTEND_URL"))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=_origins,
     allow_methods=["POST", "GET"],
     allow_headers=["*"],
 )
@@ -56,4 +61,5 @@ def health():
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8001, reload=False)
+    port = int(os.getenv("PORT", 8001))
+    uvicorn.run(app, host="0.0.0.0", port=port, reload=False)

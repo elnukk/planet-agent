@@ -15,7 +15,8 @@
       "Bash(git pull *)",
       "Bash(git stash *)",
       "Bash(git push *)",
-      "Bash(node *)"
+      "Bash(node *)",
+      "Bash(grep -E \"\\\\.\\(py|txt|toml|cfg|dockerfile|yaml|yml|json|sh\\)$\")"
     ]
   }
 }
