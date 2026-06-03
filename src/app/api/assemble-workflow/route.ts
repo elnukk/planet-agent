@@ -1,3 +1,9 @@
+// POST /api/assemble-workflow
+//
+// Kicks off notebook assembly in the background via the Python FastAPI server,
+// then writes the result directly to Convex so the workflow page reacts in real time.
+// Uses waitUntil so the Lambda stays alive after the HTTP response is sent.
+
 import { NextRequest, NextResponse } from 'next/server';
 import { waitUntil } from '@vercel/functions';
 
@@ -35,10 +41,9 @@ async function runAssembly(intake: unknown, workflowId: string): Promise<void> {
     throw new Error(`Agent returned ${pyRes.status}: ${detail}`);
   }
 
-  // 1. Added "packages: string[]" to the Python response type definition
   const pyData = (await pyRes.json()) as {
     cells: RawCell[];
-    packages: string[]; // <-- Added this
+    packages: string[];
     sourceNotebooks: SourceNotebook[];
   };
 
@@ -53,12 +58,11 @@ async function runAssembly(intake: unknown, workflowId: string): Promise<void> {
     content: s.content ?? '',
   }));
 
-  // 2. Added "packages" into the Convex mutation payload
   await convex.mutation(api.workflows.updateWorkflow, {
     id: workflowId as Id<'workflows'>,
     notebookCells,
     sourceNotebooks,
-    packages: pyData.packages ?? [], // <-- Added this
+    packages: pyData.packages ?? [],
   });
 }
 

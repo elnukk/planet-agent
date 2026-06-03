@@ -1,3 +1,9 @@
+// POST /api/intake-questions
+//
+// Dynamically generates follow-up questions for the intake flow using Claude.
+// Supports: generating initial questions, replacing a single question,
+// checking sufficiency, and appending the next question one at a time.
+
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 

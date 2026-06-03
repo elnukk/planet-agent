@@ -1,3 +1,9 @@
+// POST /api/run-cell
+//
+// Executes a single notebook cell in an isolated E2B sandbox.
+// Installs required packages, injects the user's Planet API key as an env var,
+// and returns stdout, stderr, and exit code.
+
 import { NextRequest, NextResponse } from 'next/server';
 import { Sandbox } from 'e2b';
 import { ConvexHttpClient } from 'convex/browser';

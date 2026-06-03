@@ -1,5 +1,10 @@
 # intake_bot.py
-# M1 - Brandyn
+#
+# Interactive CLI intake flow for the notebook assembly pipeline.
+# Collects the user's region, date range, Planet product, and use-case
+# through a two-layer conversation, then synthesizes a structured intake JSON.
+#
+# Usage: python knowledge-base/intake/intake_bot.py
 
 
 import json

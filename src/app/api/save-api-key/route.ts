@@ -1,3 +1,8 @@
+// POST /api/save-api-key
+//
+// Encrypts the user's Planet API key and stores it in Convex.
+// The key is AES-256-GCM encrypted server-side before storage.
+
 import { NextRequest, NextResponse } from 'next/server';
 import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../../../convex/_generated/api';

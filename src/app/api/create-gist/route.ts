@@ -1,3 +1,8 @@
+// POST /api/create-gist
+//
+// Converts assembled notebook cells to .ipynb format and publishes them as a
+// GitHub Gist. Returns a Google Colab URL so the user can open and run the notebook.
+
 import { NextRequest, NextResponse } from 'next/server';
 
 interface Cell {

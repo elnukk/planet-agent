@@ -1,3 +1,8 @@
+// POST /api/generate-workflow
+//
+// Generates a short, human-readable title for a new workflow based on the
+// user's use case and region description.
+
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 

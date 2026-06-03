@@ -31,4 +31,9 @@ yarn-error.log*
 
 # Vercel
 .vercel
+
+# Claude Code
 .claude
+
+# Convex local dev state
+.convex/

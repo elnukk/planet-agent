@@ -1,3 +1,8 @@
+// POST /api/synthesize-intake
+//
+// Converts the user's intake conversation (Q&A pairs + form fields) into the
+// structured intake JSON consumed by the Python assembly pipeline.
+
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 

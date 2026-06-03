@@ -1,3 +1,13 @@
+# api_server.py
+#
+# FastAPI server exposing the notebook assembly pipeline over HTTP.
+# Receives structured intake JSON from the Next.js frontend, runs the
+# planner → coder pipeline, and returns assembled notebook cells.
+#
+# Endpoints:
+#   POST /assemble  — run the full pipeline and return notebook cells
+#   GET  /health    — liveness check
+
 import os
 import sys
 from pathlib import Path

@@ -1,5 +1,6 @@
 # web_search.py
-# M1 - Anya
+#
+# Live web search against docs.planet.com using SerpAPI.
 
 import requests
 from bs4 import BeautifulSoup

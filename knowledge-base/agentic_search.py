@@ -1,5 +1,4 @@
 # agentic_search.py
-# M1 - Vanesska
 #
 # Iterative notebook retrieval for workflow-step search.
 #

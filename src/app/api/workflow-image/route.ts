@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// GET /api/workflow-image?name=<workflow name>&limit=<n>
+//
+// Searches Wikimedia Commons for relevant aerial/nature photos based on the
+// workflow name. Used to display a cover image on the workflow card.
+
 const STOP_WORDS = new Set([
   // articles, conjunctions, prepositions
   'the','a','an','and','or','for','in','of','to','with','by','from',

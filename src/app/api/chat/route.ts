@@ -1,3 +1,9 @@
+// POST /api/chat
+//
+// AI chat assistant for an assembled notebook. Answers questions about cells
+// and applies targeted edits via the edit_notebook tool. Edits are written
+// directly to Convex so the workflow page updates in real time.
+
 import { NextRequest, NextResponse } from 'next/server';
 import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../../../convex/_generated/api';
