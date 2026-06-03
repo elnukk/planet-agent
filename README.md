@@ -19,7 +19,7 @@ Planet Labs Provides it’s subscribers with cutting edge and powerful satellite
 ### Installation
 Clone Repository
 ```bash
-git clone <(https://github.com/elnukk/planet-agent.git)>
+git clone <https://github.com/elnukk/planet-agent.git>
 cd planet-agent
 ```
 
