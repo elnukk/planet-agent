@@ -10,7 +10,28 @@ const TEAM = [
   { name: 'Anya Pinto', linkedin: 'https://www.linkedin.com/in/anyapinto/' },
 ];
 
-const TECH = ['Next.js', 'TypeScript', 'Convex', 'Claude API', 'E2B', 'Tailwind CSS'];
+const TECH = ['Next.js', 'TypeScript', 'Convex', 'Claude API', 'DSPy', 'FastAPI', 'E2B', 'Tailwind CSS'];
+
+const PROTOTYPES = [
+  {
+    phase: 'Lo-Fi',
+    title: 'Filter-based search with block coding',
+    description:
+      'Our first prototype let users filter analyses by variable, location, and timespan alongside a block-style coding interface. We wanted to preserve user agency over code. In testing, we found the block-coding approach too complex to implement reliably within the project timeline and shifted toward grounding generation in Planet\'s existing Jupyter notebook library.',
+  },
+  {
+    phase: 'Mid-Fi',
+    title: 'Conversational chatbot',
+    description:
+      'The second iteration introduced a chatbot to help users refine queries and generate workflows automatically, with the option to view and modify underlying code. User feedback revealed two problems: participants conflated the tool with general-purpose AI models like ChatGPT, and the open-ended conversation format produced disorganized or inconsistent analysis structure.',
+  },
+  {
+    phase: 'Hi-Fi',
+    title: 'Structured questionnaire grounded in Planet notebooks',
+    description:
+      'The final design replaced the chatbot with a step-by-step intake questionnaire. Static questions collect use case, region, time range, and Planet product; Claude then generates targeted follow-up questions specific to the described analysis. Code generation is grounded in Planet\'s existing Jupyter notebooks to reduce hallucination risk. Users land on a notebook-style page with commented cells, visual outputs, and an inline chat for refinement.',
+  },
+];
 
 export default function LandingPage() {
   return (
@@ -90,10 +111,92 @@ export default function LandingPage() {
 
       <div className="border-t border-gray-100 max-w-3xl mx-auto w-full" />
 
+      {/* Needfinding */}
+      <section className="py-20 px-8">
+        <div className="max-w-3xl mx-auto">
+          <h2 className="text-2xl font-bold text-gray-900 mb-5">Needfinding & Research</h2>
+          <p className="text-gray-600 text-base leading-relaxed mb-4">
+            Our primary target users are conservation teams working within the Project Centinela program.
+            To understand their needs, we analyzed annual survey data collected from participating organizations —
+            a dataset broad enough to capture how different sites across dozens of countries interact with Planet
+            data and what limitations they face.
+          </p>
+          <p className="text-gray-600 text-base leading-relaxed mb-4">
+            We supplemented the survey with individual interviews at several conservation sites, which surfaced
+            personal experiences and anecdotes that gave texture to the quantitative findings. We also attended
+            a priority-setting call with Planet's newest conservation site, observing the onboarding process
+            firsthand to understand the expectations and friction points new users encounter.
+          </p>
+
+          <div className="mt-10 bg-gray-50 rounded-2xl px-7 py-6">
+            <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-3">Core Need</p>
+            <p className="text-gray-800 text-base leading-relaxed font-medium">
+              "Conservation teams need to turn Planet's satellite data into decisions without investing
+              significant time, technical expertise, or infrastructure in data access and integration."
+            </p>
+          </div>
+
+          <p className="text-gray-600 text-base leading-relaxed mt-6 mb-8">
+            A recurring theme across interviews was that many users were unwilling to invest substantial
+            time learning the platform, particularly because the work is often tied to temporary or
+            time-bounded projects. Planet's existing training and documentation, while thorough, was not
+            enough to drive adoption under these constraints. What users needed was a platform that
+            lowered the barrier to entry structurally — not more documentation.
+          </p>
+
+          <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-4">How Might We</p>
+          <div className="flex flex-col gap-3">
+            {[
+              'Help teams access insights from Planet data without any setup, API knowledge, or custom workflows?',
+              'Deliver answers instead of just satellite data?',
+              "Scale one expert's knowledge across fifty teams?",
+            ].map((q, i) => (
+              <div key={i} className="flex gap-4 items-start">
+                <span className="text-sm font-bold mt-0.5 flex-shrink-0" style={{ color: '#009DA5' }}>{i + 1}</span>
+                <p className="text-gray-600 text-sm leading-relaxed">{q}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <div className="border-t border-gray-100 max-w-3xl mx-auto w-full" />
+
+      {/* Design Process */}
+      <section className="py-20 px-8">
+        <div className="max-w-3xl mx-auto">
+          <h2 className="text-2xl font-bold text-gray-900 mb-5">Design Process</h2>
+          <p className="text-gray-600 text-base leading-relaxed mb-10">
+            We iterated through three prototype stages, each informed by feedback from testing and
+            conversations with conservation teams.
+          </p>
+          <div className="flex flex-col gap-6">
+            {PROTOTYPES.map(({ phase, title, description }) => (
+              <div key={phase} className="flex gap-6 items-start">
+                <div className="flex-shrink-0 w-14 pt-1">
+                  <span
+                    className="text-xs font-bold uppercase tracking-widest px-2 py-1 rounded"
+                    style={{ backgroundColor: '#009DA520', color: '#009DA5' }}
+                  >
+                    {phase}
+                  </span>
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900 mb-1">{title}</h3>
+                  <p className="text-sm text-gray-500 leading-relaxed">{description}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <div className="border-t border-gray-100 max-w-3xl mx-auto w-full" />
+
       {/* Features */}
       <section className="py-20 px-8">
         <div className="max-w-4xl mx-auto">
-          <h2 className="text-2xl font-bold text-gray-900 mb-12 text-center">What You Can Do</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-12 text-center">What We Built</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
 
             <div className="flex flex-col gap-3 p-6 border border-gray-100 rounded-2xl">
@@ -168,20 +271,79 @@ export default function LandingPage() {
       {/* How we built it */}
       <section className="py-20 px-8 bg-black text-white">
         <div className="max-w-3xl mx-auto">
-          <h2 className="text-2xl font-bold mb-5">How We Built It</h2>
-          <p className="text-gray-400 text-base leading-relaxed">
-            The frontend is built with Next.js and TypeScript, styled with Tailwind CSS. When a
-            user completes the intake questionnaire, their inputs (use case, region, time range,
-            Planet product) are sent to Anthropic's Claude API, which generates three to five
-            follow-up questions tailored to the specific analysis described. Once the workflow is
-            confirmed, Claude also generates the analysis code, grounded in Planet's existing
-            Jupyter notebook library to reduce the risk of unsupported methods. User accounts,
-            workflow configurations, and follow-up Q&A are stored in Convex, a real-time database
-            that keeps the dashboard in sync without polling. Each notebook cell runs in an isolated
-            Python sandbox via E2B, so users can execute code directly in the browser without
-            installing any dependencies locally.
-          </p>
-          <div className="flex flex-wrap gap-3 mt-8">
+          <h2 className="text-2xl font-bold mb-10">How We Built It</h2>
+
+          <div className="flex flex-col gap-10">
+
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: '#009DA5' }}>Intake & Question Generation</p>
+              <p className="text-gray-400 text-base leading-relaxed">
+                The intake flow begins with a fixed set of questions — use case, region, time range, and Planet
+                product — collected via a structured form. Once submitted, the inputs are sent to Claude Sonnet
+                via the Anthropic API, which generates three to five follow-up questions tailored specifically
+                to the described analysis (e.g., asking about cloud cover tolerance for a vegetation index
+                workflow, or baseline dates for a change detection study). This two-layer structure keeps
+                the interface predictable while still adapting to the specifics of each request.
+              </p>
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: '#009DA5' }}>Agentic Workflow Assembly</p>
+              <p className="text-gray-400 text-base leading-relaxed">
+                Workflow generation is handled by a Python FastAPI server deployed on Railway. The
+                assembly pipeline is built with <span className="text-white font-medium">DSPy</span>, using
+                a ReAct agent that orchestrates three stages: planning, retrieval, and code generation.
+              </p>
+              <p className="text-gray-400 text-base leading-relaxed mt-4">
+                The <span className="text-white font-medium">planner</span> takes the intake JSON, runs a
+                broad discovery search, and prompts Claude Sonnet to generate an ordered list of workflow
+                steps grounded in what the search actually found — not a hardcoded skeleton. Each step
+                includes a targeted retrieval query. Steps are then processed in parallel via a thread pool,
+                each running notebook search and live docs retrieval concurrently. Claude Haiku handles
+                per-step material selection (choosing the most relevant cells and docs for each step) to
+                keep latency down on the high-volume selection calls.
+              </p>
+              <p className="text-gray-400 text-base leading-relaxed mt-4">
+                The <span className="text-white font-medium">notebook retrieval</span> system uses a
+                multi-pass approach: it ranks Planet's Jupyter notebooks by metadata relevance, searches
+                cells within the top-ranked notebooks, scores matches, and expands the query if results
+                are weak — up to three passes, with the candidate pool growing each round. This grounds
+                code generation in real, working Planet examples rather than synthesized code, which was
+                a deliberate choice to reduce hallucination risk in an API-specific domain.
+              </p>
+              <p className="text-gray-400 text-base leading-relaxed mt-4">
+                The system is also product-aware: band availability constraints for PlanetScope, SkySat,
+                and Basemap are injected into every planning and selection prompt, preventing the
+                generation of steps that require bands the product does not carry (e.g., SWIR-dependent
+                indices on PlanetScope).
+              </p>
+              <p className="text-gray-400 text-base leading-relaxed mt-4">
+                The <span className="text-white font-medium">coder</span> takes the enriched plan and
+                assembles a final notebook, deduplicating imports, normalizing variable names across
+                steps, and injecting AOI, date range, and product placeholders from the intake.
+              </p>
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: '#009DA5' }}>Frontend & Data Layer</p>
+              <p className="text-gray-400 text-base leading-relaxed">
+                The frontend is built with <span className="text-white font-medium">Next.js</span> and TypeScript,
+                deployed on Vercel. Assembly runs as a background task via{' '}
+                <span className="text-white font-medium">Vercel's <code className="text-sm">waitUntil</code></span>,
+                keeping the HTTP response fast while the pipeline completes asynchronously.
+                User accounts, workflow configurations, and follow-up Q&A are stored in{' '}
+                <span className="text-white font-medium">Convex</span>, a real-time database that pushes
+                updates to the dashboard without polling — so the notebook cells appear as soon as assembly
+                writes them. Each notebook cell runs in an isolated Python sandbox via{' '}
+                <span className="text-white font-medium">E2B</span>, so users can execute code directly
+                in the browser without installing any dependencies locally. Completed notebooks can be
+                exported to GitHub Gist and opened in Google Colab with one click.
+              </p>
+            </div>
+
+          </div>
+
+          <div className="flex flex-wrap gap-3 mt-10">
             {TECH.map((t) => (
               <span
                 key={t}
@@ -199,7 +361,7 @@ export default function LandingPage() {
         <div className="max-w-4xl mx-auto">
           <h2 className="text-2xl font-bold text-gray-900 mb-2">The Team</h2>
           <p className="text-gray-500 text-sm mb-10">
-            Built by Stanford students in CS + Social Good Studio (CS51/52), in partnership with Planet Labs.
+            Built by Stanford students in CS + Social Good Studio (CS51/52), working alongside the Project Centinela team at Planet Labs.
           </p>
           <div className="flex flex-wrap gap-3">
             {TEAM.map(({ name, linkedin }) => (
@@ -243,7 +405,7 @@ export default function LandingPage() {
       {/* Footer */}
       <footer className="h-16 flex items-center justify-center bg-black border-t border-gray-800">
         <p className="text-xs text-gray-600">
-          Built in partnership with Planet Labs · Stanford CS + Social Good Studio
+          Built in collaboration with the Project Centinela team at Planet Labs · Stanford CS + Social Good Studio
         </p>
       </footer>
 
