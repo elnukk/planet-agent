@@ -2,7 +2,7 @@
 
 A platform that helps conservation organizations turn Planet Labs satellite data into runnable Jupyter notebooks. Users describe their analysis goal through a guided intake flow; an AI agent searches a curated notebook corpus and assembles a complete, parameterized notebook ready to run in Google Colab.
 
-Built at Stanford CS52 in partnership with Planet Labs.
+Built at Stanford CS52 in collaboration with the Project Centinela team at Planet Labs.
 
 ## Architecture
 
@@ -139,7 +139,7 @@ Add environment variables: `ANTHROPIC_API_KEY`, `SERPAPI_KEY`, and `FRONTEND_URL
 
 ## Acknowledgements
 
-Thanks to Amy Wiesenthal and Seamus at Planet Labs, and to the conservation organizations that participated in our needfinding interviews.
+Thanks to Amy Rosenthal and Seamus Lombardo at Planet Labs, and to the conservation organizations that participated in our needfinding interviews.
 
 ## License
 
