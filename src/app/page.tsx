@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { DEMO_WORKFLOW_PATH } from '@/lib/demoMode';
 
 const TEAM = [
   { name: 'Jolie Teo', linkedin: 'https://www.linkedin.com/in/jolie-teo/' },
@@ -70,6 +71,12 @@ export default function LandingPage() {
           >
             Get Started
           </Link>
+          <Link
+            href={DEMO_WORKFLOW_PATH}
+            className="px-8 py-3 rounded-full text-sm font-semibold border border-gray-400 text-white hover:bg-white hover:text-black transition-colors"
+          >
+            See an Example Workflow
+          </Link>
           <a
             href="#the-problem"
             className="px-8 py-3 rounded-full text-sm font-semibold border border-gray-600 text-gray-300 hover:border-gray-400 hover:text-white transition-colors"
@@ -77,6 +84,9 @@ export default function LandingPage() {
             Learn More
           </a>
         </div>
+        <p className="text-gray-500 text-xs mt-5">
+          No account needed to view the example.
+        </p>
       </section>
 
       {/* Context */}

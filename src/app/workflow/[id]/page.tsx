@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
+import Link from 'next/link';
 import Image from 'next/image';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
@@ -9,6 +10,7 @@ import type { Id } from '../../../../convex/_generated/dataModel';
 import planetLogo from '../../dashboard/planetlogo.png';
 import { type IntakeJSON } from '@/lib/workflowIntake';
 import { getCurrentUser } from '@/lib/auth';
+import { ASSEMBLY_ENABLED, DEMO_WORKFLOW_PATH, EDITING_ENABLED } from '@/lib/demoMode';
 
 const TEAL = '#009DA5';
 
@@ -172,15 +174,17 @@ function CodeCell({
                 </>
               ) : (
                 <>
-                  <button
-                    onClick={startEdit}
-                    className="text-xs text-gray-400 font-medium px-3 py-1 rounded-full border border-gray-600 hover:border-gray-400 hover:text-gray-200 transition-colors flex items-center gap-1"
-                  >
-                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Z" />
-                    </svg>
-                    Edit
-                  </button>
+                  {EDITING_ENABLED && (
+                    <button
+                      onClick={startEdit}
+                      className="text-xs text-gray-400 font-medium px-3 py-1 rounded-full border border-gray-600 hover:border-gray-400 hover:text-gray-200 transition-colors flex items-center gap-1"
+                    >
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Z" />
+                      </svg>
+                      Edit
+                    </button>
+                  )}
                   <button
                     onClick={() => onRun(cell.id)}
                     disabled={cell.isRunning}
@@ -312,20 +316,34 @@ function ChatMarkdown({ content }: { content: string }) {
 }
 
 function ChatPanel({ workflowId, intake, hasApiKey, notebookCells, onClose }: { workflowId: string; intake: IntakeJSON | null; hasApiKey: boolean; notebookCells: Array<{ cellType: string; source: string }>; onClose: () => void }) {
+  // Conversations are stored per workflow with no user scoping, so a shared
+  // public link would show every visitor everyone else's chat — and let them add
+  // to it. Anonymous visitors therefore get an ephemeral, in-memory thread that
+  // is never persisted and never read back.
+  const isAnonymous = !getCurrentUser();
+
   const convexMessages = useQuery(
     api.conversations.getConversation,
-    { workflowId: workflowId as Id<'workflows'> },
+    isAnonymous ? 'skip' : { workflowId: workflowId as Id<'workflows'> },
   ) as ConvexMessage[] | undefined;
 
   const sendMessage = useMutation(api.conversations.sendMessage);
 
+  const [localMessages, setLocalMessages] = useState<ConvexMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  function appendLocal(role: 'user' | 'assistant', content: string) {
+    setLocalMessages((prev) => [
+      ...prev,
+      { _id: `local-${prev.length}-${role}`, role, content, createdAt: Date.now() },
+    ]);
+  }
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [convexMessages]);
+  }, [convexMessages, localMessages]);
 
   async function send() {
     const text = input.trim();
@@ -333,25 +351,42 @@ function ChatPanel({ workflowId, intake, hasApiKey, notebookCells, onClose }: { 
     setInput('');
     setLoading(true);
 
-    await sendMessage({ workflowId: workflowId as Id<'workflows'>, role: 'user', content: text });
+    // History travels in the request body for anonymous visitors, since the
+    // server has no stored thread to read for them.
+    const priorHistory = (isAnonymous ? localMessages : convexMessages ?? []).map(
+      (m) => ({ role: m.role, content: m.content }),
+    );
+
+    if (isAnonymous) appendLocal('user', text);
+    else await sendMessage({ workflowId: workflowId as Id<'workflows'>, role: 'user', content: text });
+
+    async function record(role: 'assistant', content: string) {
+      if (isAnonymous) appendLocal(role, content);
+      else await sendMessage({ workflowId: workflowId as Id<'workflows'>, role, content });
+    }
 
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workflowId, message: text, notebookCells }),
+        body: JSON.stringify({
+          workflowId,
+          message: text,
+          notebookCells,
+          ...(isAnonymous ? { history: priorHistory } : {}),
+        }),
       });
       const data = await res.json() as { reply?: string; error?: string };
       const reply = data.reply || data.error || 'Something went wrong. Please try again.';
-      await sendMessage({ workflowId: workflowId as Id<'workflows'>, role: 'assistant', content: reply });
+      await record('assistant', reply);
     } catch {
-      await sendMessage({ workflowId: workflowId as Id<'workflows'>, role: 'assistant', content: 'Network error — could not reach the assistant.' });
+      await record('assistant', 'Network error — could not reach the assistant.');
     } finally {
       setLoading(false);
     }
   }
 
-  const displayMessages = convexMessages ?? [];
+  const displayMessages = isAnonymous ? localMessages : convexMessages ?? [];
   const welcomeText = intake
     ? `Hi! I'm the Project Centinela assistant. I can see your workflow is for ${intake.use_case || 'satellite analysis'} in ${intake.region?.description || 'your region'}. How can I help?`
     : "Hi! I'm the Project Centinela workflow assistant. Ask me anything about this analysis.";
@@ -496,6 +531,9 @@ export default function WorkflowPage() {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       return;
     }
+    // The agent server is unhosted, so firing this would only spin for ten minutes
+    // before timing out. The disabled notice below explains it instead.
+    if (!ASSEMBLY_ENABLED) return;
     triggerAssembly(workflowData);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workflowData, workflowId, convexUserData]);
@@ -524,6 +562,7 @@ export default function WorkflowPage() {
     : [];
 
   async function handleCellEdit(cellId: string, newSource: string) {
+    if (!EDITING_ENABLED) return;
     setEditedSources((prev) => ({ ...prev, [cellId]: newSource }));
     if (!workflowId) return;
     const updatedCells = cells.map((c) => ({
@@ -539,7 +578,10 @@ export default function WorkflowPage() {
     const targetCell = cells.find((c) => c.id === id);
     if (!targetCell) return;
 
-    if (convexUserData === undefined) return; // still loading
+    // A skipped query stays undefined forever, so undefined only means "still
+    // loading" when there is actually a signed-in user to load. Without this
+    // check, a logged-out visitor's click returns here and nothing happens.
+    if (localUser?.convexUserId && convexUserData === undefined) return;
     if (!hasApiKey) {
       setShowApiKeyPrompt(true);
       return;
@@ -688,7 +730,27 @@ export default function WorkflowPage() {
           )}
         </div>
 
-        {!hasRealCells && workflowData !== undefined && workflowData !== null && !assembleError && !timedOut && (
+        {!ASSEMBLY_ENABLED && !hasRealCells && workflowData !== undefined && workflowData !== null && (
+          <div className="rounded-xl border border-gray-200 bg-gray-50 px-5 py-4">
+            <p className="text-sm font-semibold text-gray-800">
+              Live assembly is turned off in this public demo
+            </p>
+            <p className="text-xs text-gray-600 mt-1.5 leading-relaxed">
+              Generating a workflow runs a multi-step agent pipeline that takes several minutes
+              and calls paid APIs, so it isn&apos;t exposed publicly. The intake flow above shows
+              what the agent receives — and you can read a finished notebook it produced.
+            </p>
+            <Link
+              href={DEMO_WORKFLOW_PATH}
+              className="inline-block mt-3 text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors"
+              style={{ borderColor: TEAL, color: TEAL }}
+            >
+              View an example workflow
+            </Link>
+          </div>
+        )}
+
+        {ASSEMBLY_ENABLED && !hasRealCells && workflowData !== undefined && workflowData !== null && !assembleError && !timedOut && (
           <div className="rounded-xl border border-teal-100 bg-teal-50 px-5 py-4 flex items-center gap-4">
             <div
               className="w-5 h-5 rounded-full border-2 border-t-transparent flex-shrink-0 animate-spin"
@@ -703,7 +765,7 @@ export default function WorkflowPage() {
           </div>
         )}
 
-        {(assembleError || timedOut) && !hasRealCells && (
+        {ASSEMBLY_ENABLED && (assembleError || timedOut) && !hasRealCells && (
           <div className="rounded-xl border border-red-100 bg-red-50 px-5 py-4 flex items-start justify-between gap-4">
             <div>
               <p className="text-sm font-semibold text-red-700">
@@ -778,7 +840,9 @@ export default function WorkflowPage() {
               <h2 className="text-base font-bold text-gray-900">Planet API Key Required</h2>
             </div>
             <p className="text-sm text-gray-500 mb-5 leading-relaxed">
-              A Planet API key is needed to run this workflow. Add your key on the Profile page and come back to run the analysis.
+              {localUser
+                ? 'A Planet API key is needed to run this workflow. Add your key on the Profile page and come back to run the analysis.'
+                : 'Running cells requires an account and your own Planet API key. You can download this notebook and run it locally with your key instead.'}
             </p>
             <div className="flex gap-3">
               <button

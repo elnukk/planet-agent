@@ -9,6 +9,7 @@ import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import Anthropic from '@anthropic-ai/sdk';
+import { EDITING_ENABLED } from '@/lib/demoMode';
 import { decrypt } from '@/lib/encryption';
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
@@ -31,6 +32,9 @@ type ChatRequestBody = {
   workflowId: string;
   message: string;
   notebookCells?: NotebookCell[];
+  // Anonymous visitors keep their thread client-side (conversations in Convex are
+  // shared per workflow, not per user), so they send prior turns with the request.
+  history?: Array<{ role: 'user' | 'assistant'; content: string }>;
 };
 
 // Claude only needs to emit the cells that change, not the full notebook.
@@ -127,7 +131,7 @@ function toClaudeMessages(
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as ChatRequestBody;
-    const { workflowId, message, notebookCells: clientCells } = body;
+    const { workflowId, message, notebookCells: clientCells, history: clientHistory } = body;
 
     if (!workflowId || !message?.trim()) {
       return NextResponse.json({ error: 'workflowId and message are required' }, { status: 400 });
@@ -175,9 +179,21 @@ export async function POST(req: NextRequest) {
           .join('\n\n')
       : '(No notebook cells assembled yet)';
 
-    const conversation = await convex.query(api.conversations.getConversation, {
-      workflowId: workflowId as Id<'workflows'>,
-    });
+    // When the client supplies its own history it is an anonymous visitor whose
+    // thread was never persisted — reading the shared per-workflow conversation
+    // would leak other visitors' messages into their context.
+    //
+    // This endpoint is public and spends our Anthropic key, so client-supplied
+    // turns are clamped: anyone could otherwise post ten enormous strings and
+    // bill us for the tokens. Real chat never approaches these limits.
+    const conversation = clientHistory
+      ? clientHistory
+          .filter((m) => m?.role === 'user' || m?.role === 'assistant')
+          .slice(-10)
+          .map((m) => ({ role: m.role, content: String(m.content ?? '').slice(0, 4000) }))
+      : await convex.query(api.conversations.getConversation, {
+          workflowId: workflowId as Id<'workflows'>,
+        });
 
     const today = new Date().toISOString().split('T')[0];
 
@@ -186,7 +202,8 @@ You are a satellite data workflow assistant for Project Centinela.
 Today's date is ${today}.
 Planet API authentication: ${planetApiKey ? 'configured' : 'not configured — remind the user to add their key on the Profile page if they want to run cells'}.
 
-You have two modes:
+${EDITING_ENABLED
+  ? `You have two modes:
 - Q&A: answer questions about the notebook, explain cells, describe what steps do and why.
 - Edit: when the user wants to modify, add, or remove notebook cells, call the edit_notebook tool. Only include the cells that change — provide their 0-based index from the notebook below. Then reply with a short description of what you changed.
 
@@ -194,7 +211,13 @@ Rules:
 - Be decisive. If you can infer what the user wants, do it immediately. Do not ask for information you already have (today's date, the notebook content, the intake JSON).
 - Only ask a clarifying question if the request is genuinely ambiguous and no safe default exists.
 - Only call edit_notebook for edits. For questions, just reply in text.
-- Keep replies short — 2–4 sentences max.
+- Keep replies short — 2–4 sentences max.`
+  : `This is a read-only public demo. You can answer questions about the notebook — explain cells, describe what each step does and why — but you cannot change it.
+
+Rules:
+- Be decisive. Do not ask for information you already have (today's date, the notebook content, the intake JSON).
+- You have no ability to modify the notebook. If the user asks for a change, explain what they would need to change and why, but never claim to have made it.
+- Keep replies short — 2–4 sentences max.`}
 
 INTAKE JSON:
 ${JSON.stringify(intakeJson, null, 2)}
@@ -210,7 +233,9 @@ ${notebookSource}
       model: 'claude-sonnet-4-6',
       max_tokens: 4096,
       system: systemPrompt,
-      tools: [EDIT_NOTEBOOK_TOOL],
+      // Withholding the tool is what actually enforces read-only — the prompt alone
+      // is not a guarantee.
+      ...(EDITING_ENABLED ? { tools: [EDIT_NOTEBOOK_TOOL] } : {}),
       messages: claudeMessages,
     });
 
@@ -220,7 +245,7 @@ ${notebookSource}
     );
 
     let editApplied = false;
-    if (toolUse) {
+    if (toolUse && EDITING_ENABLED) {
       const input = toolUse.input as { edits?: CellEdit[]; dateRange?: DateRange; regionDescription?: string };
       const edits = Array.isArray(input.edits) ? input.edits : [];
 
