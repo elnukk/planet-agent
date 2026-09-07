@@ -183,9 +183,9 @@ export default function LandingPage() {
           <div className="flex flex-col gap-6">
             {PROTOTYPES.map(({ phase, title, description }) => (
               <div key={phase} className="flex gap-6 items-start">
-                <div className="flex-shrink-0 w-14 pt-1">
+                <div className="flex-shrink-0 w-20 pt-1">
                   <span
-                    className="text-xs font-bold uppercase tracking-widest px-2 py-1 rounded"
+                    className="inline-block whitespace-nowrap text-xs font-bold uppercase tracking-widest px-2 py-1 rounded"
                     style={{ backgroundColor: '#009DA520', color: '#009DA5' }}
                   >
                     {phase}
